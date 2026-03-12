@@ -18,6 +18,10 @@ def test_readme_includes_required_commands():
         "pcaps/symbol=ES/date=2026-03-11/file1.pcap",
         "--dry-run /data/logical",
         "--ensure-physical --rm-both /data/nvme/0",
+        "--round-robin",
+        "--batch",
+        "srcdir/ means copy the contents",
+        "bash scripts/rm-nvme.sh -r",
     ]
     for cmd in required:
         assert cmd in text

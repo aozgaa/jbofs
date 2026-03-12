@@ -83,3 +83,89 @@ def test_most_free_selects_branch_with_highest_available_space():
 
         assert proc.returncode == 0
         assert f"{root / 'nvme' / '1' / 'file1.txt'}" in proc.stdout
+
+
+def test_recursive_requires_exactly_one_grouping_mode():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        srcdir = root / "captures"
+        srcdir.mkdir()
+        (srcdir / "a.txt").write_text("a\n", encoding="utf-8")
+        (root / "nvme" / "0").mkdir(parents=True)
+        (root / "logical").mkdir(parents=True)
+
+        proc = run_helper(
+            "-r",
+            "--policy=random",
+            str(srcdir),
+            "pcaps/day1",
+            env={**os.environ, "NVME_ROOT": str(root / "nvme"), "LOGICAL_ROOT": str(root / "logical")},
+        )
+        assert proc.returncode != 0
+        assert "round-robin" in proc.stderr.lower() or "batch" in proc.stderr.lower()
+
+        proc = run_helper(
+            "-r",
+            "--policy=random",
+            "--round-robin",
+            "--batch",
+            str(srcdir),
+            "pcaps/day1",
+            env={**os.environ, "NVME_ROOT": str(root / "nvme"), "LOGICAL_ROOT": str(root / "logical")},
+        )
+        assert proc.returncode != 0
+
+
+def test_recursive_batch_preserves_source_dir_without_trailing_slash():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        srcdir = root / "captures"
+        srcdir.mkdir()
+        (srcdir / "a.txt").write_text("a\n", encoding="utf-8")
+        (root / "nvme" / "1").mkdir(parents=True)
+        (root / "logical").mkdir(parents=True)
+
+        proc = run_helper(
+            "-r",
+            "--policy=most-free",
+            "--batch",
+            "--dry-run",
+            str(srcdir),
+            "pcaps/day1",
+            env={
+                **os.environ,
+                "NVME_ROOT": str(root / "nvme"),
+                "LOGICAL_ROOT": str(root / "logical"),
+                "NVME_AVAIL_KB_1": "1000",
+            },
+        )
+        assert proc.returncode == 0
+        assert f"{root / 'nvme' / '1' / 'pcaps/day1/captures/a.txt'}" in proc.stdout
+        assert f"{root / 'logical' / 'pcaps/day1/captures/a.txt'}" in proc.stdout
+
+
+def test_recursive_round_robin_uses_rsync_style_trailing_slash_contents():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        srcdir = root / "captures"
+        srcdir.mkdir()
+        (srcdir / "a.txt").write_text("a\n", encoding="utf-8")
+        (srcdir / "b.txt").write_text("b\n", encoding="utf-8")
+        for disk in ("0", "1"):
+            (root / "nvme" / disk).mkdir(parents=True)
+        (root / "logical").mkdir(parents=True)
+
+        proc = run_helper(
+            "-r",
+            "--policy=random",
+            "--round-robin",
+            "--dry-run",
+            str(srcdir) + "/",
+            "pcaps/day1",
+            env={**os.environ, "NVME_ROOT": str(root / "nvme"), "LOGICAL_ROOT": str(root / "logical")},
+        )
+        assert proc.returncode == 0
+        assert f"{root / 'nvme' / '0' / 'pcaps/day1/a.txt'}" in proc.stdout
+        assert f"{root / 'nvme' / '1' / 'pcaps/day1/b.txt'}" in proc.stdout
+        assert f"{root / 'logical' / 'pcaps/day1/a.txt'}" in proc.stdout
+        assert f"{root / 'logical' / 'pcaps/day1/b.txt'}" in proc.stdout

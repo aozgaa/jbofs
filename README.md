@@ -57,7 +57,7 @@ Copies a file onto one selected NVMe backing path and creates a symlink into the
 Usage:
 
 ```bash
-bash scripts/cp-to-nvme.sh (--disk=N | --policy=random|most-free) [-f|--force] [--dry-run] SRC LOGICAL_DEST
+bash scripts/cp-to-nvme.sh (--disk=N | --policy=random|most-free) [-r|--recursive] [--round-robin|--batch] [-f|--force] [--dry-run] SRC LOGICAL_DEST
 ```
 
 Rules:
@@ -66,6 +66,10 @@ Rules:
 - `LOGICAL_DEST` is relative to `/data/logical`.
 - The top-level category is part of `LOGICAL_DEST`, for example `pcaps/...`, `logs/...`, or `captures/...`.
 - `--disk=N` requires that `/data/nvme/N` already exists, usually from `scripts/07_aliases.sh`.
+- Recursive mode requires exactly one of `--round-robin` or `--batch`.
+- `--round-robin` assigns files one by one across numeric NVMe aliases.
+- `--batch` assigns the whole recursive copy to one selected disk.
+- `srcdir/ means copy the contents`; `srcdir` means copy the directory itself.
 
 Environment:
 
@@ -94,6 +98,13 @@ Dry-run example:
 bash scripts/cp-to-nvme.sh --disk=1 --dry-run capture.pcap pcaps/test/file1.pcap
 ```
 
+Recursive examples:
+
+```bash
+bash scripts/cp-to-nvme.sh -r --policy=most-free --batch ./captures pcaps/2026-03-12
+bash scripts/cp-to-nvme.sh -r --policy=random --round-robin ./captures/ pcaps/2026-03-12
+```
+
 If you want a shell function in `~/.bash_aliases`, use:
 
 ```bash
@@ -109,7 +120,7 @@ Removes a logical symlink, the backing physical file, or both.
 Usage:
 
 ```bash
-bash scripts/rm-nvme.sh [--ensure-logical|--ensure-physical|--ensure-data] [--rm-link|--rm-data|--rm-both] [--dry-run] PATH
+bash scripts/rm-nvme.sh [-r|--recursive] [--ensure-logical|--ensure-physical|--ensure-data] [--rm-link|--rm-data|--rm-both] [--dry-run] PATH
 ```
 
 Defaults:
@@ -125,6 +136,7 @@ Rules:
 - `--ensure-logical` restricts the input to `/data/logical/...`.
 - `--ensure-physical` restricts the input to `/data/nvme/...`, including both stable mount paths and numeric aliases.
 - When removing by physical path, all matching logical symlinks under `/data/logical` are removed.
+- `-r` recurses through logical or physical directories and applies the selected remove mode to every matching file.
 
 Examples:
 
@@ -132,6 +144,7 @@ Examples:
 bash scripts/rm-nvme.sh --dry-run /data/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
 bash scripts/rm-nvme.sh --ensure-logical --rm-link /data/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
 bash scripts/rm-nvme.sh --ensure-physical --rm-both /data/nvme/0/pcaps/symbol=ES/date=2026-03-11/file1.pcap
+bash scripts/rm-nvme.sh -r --ensure-logical /data/logical/pcaps/2026-03-11
 ```
 
 ## End-to-end workflow

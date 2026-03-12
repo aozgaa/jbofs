@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  cp-to-nvme.sh (--disk=N | --policy=random|most-free) [-f|--force] [--dry-run] SRC LOGICAL_DEST
+  cp-to-nvme.sh (--disk=N | --policy=random|most-free) [-r|--recursive] [--round-robin|--batch] [-f|--force] [--dry-run] SRC LOGICAL_DEST
 
 Environment:
   NVME_ROOT  default: /data/nvme
@@ -23,6 +23,9 @@ DISK=""
 POLICY=""
 FORCE=0
 DRY_RUN=0
+RECURSIVE=0
+GROUP_MODE=""
+GROUP_COUNT=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -41,6 +44,20 @@ while [[ $# -gt 0 ]]; do
     --policy)
       POLICY="$2"
       shift 2
+      ;;
+    -r|--recursive)
+      RECURSIVE=1
+      shift
+      ;;
+    --round-robin)
+      GROUP_MODE="round-robin"
+      GROUP_COUNT=$((GROUP_COUNT + 1))
+      shift
+      ;;
+    --batch)
+      GROUP_MODE="batch"
+      GROUP_COUNT=$((GROUP_COUNT + 1))
+      shift
       ;;
     -f|--force)
       FORCE=1
@@ -83,10 +100,27 @@ fi
 SRC="$1"
 LOGICAL_DEST="$2"
 
-[[ -f "$SRC" ]] || fail "source file not found: $SRC"
+SRC_HAS_TRAILING_SLASH=0
+[[ "$SRC" == */ ]] && SRC_HAS_TRAILING_SLASH=1
+SRC_STRIPPED="${SRC%/}"
+[[ -n "$SRC_STRIPPED" ]] || SRC_STRIPPED="/"
+
+if [[ "$RECURSIVE" -eq 1 ]]; then
+  [[ -d "$SRC_STRIPPED" ]] || fail "source directory not found: $SRC"
+else
+  [[ -f "$SRC_STRIPPED" ]] || fail "source file not found: $SRC"
+fi
 [[ "$LOGICAL_DEST" != /* ]] || fail "logical destination must be relative"
 [[ "$LOGICAL_DEST" != ../* ]] || fail "logical destination must be relative"
 [[ "$LOGICAL_DEST" != *"/../"* ]] || fail "logical destination must be relative"
+
+if [[ "$RECURSIVE" -eq 1 ]]; then
+  if (( GROUP_COUNT != 1 )); then
+    fail "recursive mode requires exactly one of --round-robin or --batch"
+  fi
+else
+  [[ -z "$GROUP_MODE" ]] || fail "--round-robin/--batch require --recursive"
+fi
 
 list_disks() {
   find "$NVME_ROOT" -mindepth 1 -maxdepth 1 \( -type l -o -type d \) -printf '%f\n' | grep -E '^[0-9]+$' | sort -V
@@ -130,36 +164,75 @@ select_disk() {
   printf '%s\n' "$best_disk"
 }
 
-CHOSEN_DISK="$(select_disk)"
-REAL_DEST="$NVME_ROOT/$CHOSEN_DISK/$LOGICAL_DEST"
-LINK_DEST="$LOGICAL_ROOT/$LOGICAL_DEST"
+copy_one() {
+  local src_file="$1"
+  local logical_rel="$2"
+  local chosen_disk="$3"
+  local real_dest="$NVME_ROOT/$chosen_disk/$logical_rel"
+  local link_dest="$LOGICAL_ROOT/$logical_rel"
 
-[[ -e "$NVME_ROOT/$CHOSEN_DISK" ]] || fail "target disk alias not found: $NVME_ROOT/$CHOSEN_DISK"
+  [[ -e "$NVME_ROOT/$chosen_disk" ]] || fail "target disk alias not found: $NVME_ROOT/$chosen_disk"
 
-if [[ "$DRY_RUN" -eq 1 ]]; then
-  echo "mkdir -p -- $(dirname "$REAL_DEST")"
-  echo "mkdir -p -- $(dirname "$LINK_DEST")"
-  if [[ "$FORCE" -eq 1 ]]; then
-    echo "rm -f -- $REAL_DEST"
-    echo "rm -f -- $LINK_DEST"
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    echo "mkdir -p -- $(dirname "$real_dest")"
+    echo "mkdir -p -- $(dirname "$link_dest")"
+    if [[ "$FORCE" -eq 1 ]]; then
+      echo "rm -f -- $real_dest"
+      echo "rm -f -- $link_dest"
+    fi
+    echo "cp -a -- $src_file $real_dest"
+    echo "ln -s -- $real_dest $link_dest"
+    return
   fi
-  echo "cp -a -- $SRC $REAL_DEST"
-  echo "ln -s -- $REAL_DEST $LINK_DEST"
+
+  mkdir -p -- "$(dirname "$real_dest")" "$(dirname "$link_dest")"
+
+  if [[ "$FORCE" -eq 0 ]]; then
+    [[ ! -e "$real_dest" ]] || fail "real destination already exists: $real_dest"
+    [[ ! -e "$link_dest" && ! -L "$link_dest" ]] || fail "logical link destination already exists: $link_dest"
+  else
+    rm -f -- "$real_dest" "$link_dest"
+  fi
+
+  cp -a -- "$src_file" "$real_dest"
+  ln -s -- "$real_dest" "$link_dest"
+
+  printf 'placed on disk %s\n' "$chosen_disk"
+  printf 'real: %s\n' "$real_dest"
+  printf 'link: %s\n' "$link_dest"
+}
+
+if [[ "$RECURSIVE" -eq 0 ]]; then
+  CHOSEN_DISK="$(select_disk)"
+  copy_one "$SRC_STRIPPED" "$LOGICAL_DEST" "$CHOSEN_DISK"
   exit 0
 fi
 
-mkdir -p -- "$(dirname "$REAL_DEST")" "$(dirname "$LINK_DEST")"
-
-if [[ "$FORCE" -eq 0 ]]; then
-  [[ ! -e "$REAL_DEST" ]] || fail "real destination already exists: $REAL_DEST"
-  [[ ! -e "$LINK_DEST" && ! -L "$LINK_DEST" ]] || fail "logical link destination already exists: $LINK_DEST"
-else
-  rm -f -- "$REAL_DEST" "$LINK_DEST"
+base_dir="$SRC_STRIPPED"
+dest_prefix="$LOGICAL_DEST"
+if [[ "$SRC_HAS_TRAILING_SLASH" -eq 0 ]]; then
+  src_name="$(basename -- "$SRC_STRIPPED")"
+  dest_prefix="$LOGICAL_DEST/$src_name"
 fi
 
-cp -a -- "$SRC" "$REAL_DEST"
-ln -s -- "$REAL_DEST" "$LINK_DEST"
+mapfile -t source_files < <(find "$base_dir" -type f | sort)
+[[ "${#source_files[@]}" -gt 0 ]] || exit 0
 
-printf 'placed on disk %s\n' "$CHOSEN_DISK"
-printf 'real: %s\n' "$REAL_DEST"
-printf 'link: %s\n' "$LINK_DEST"
+if [[ "$GROUP_MODE" == "batch" ]]; then
+  batch_disk="$(select_disk)"
+fi
+
+idx=0
+for src_file in "${source_files[@]}"; do
+  rel="${src_file#$base_dir/}"
+  logical_rel="$dest_prefix/$rel"
+  if [[ "$GROUP_MODE" == "batch" ]]; then
+    chosen_disk="$batch_disk"
+  else
+    mapfile -t disks < <(list_disks)
+    [[ "${#disks[@]}" -gt 0 ]] || fail "no numeric nvme aliases found under $NVME_ROOT"
+    chosen_disk="${disks[$((idx % ${#disks[@]}))]}"
+  fi
+  copy_one "$src_file" "$logical_rel" "$chosen_disk"
+  idx=$((idx + 1))
+done
