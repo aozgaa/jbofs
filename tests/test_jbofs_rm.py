@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 
-SCRIPT = Path("scripts/rm-nvme.sh")
+SCRIPT = Path("scripts/jbofs-rm.sh")
 
 
 def run_helper(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -16,7 +16,7 @@ def run_helper(*args: str, env: dict[str, str] | None = None) -> subprocess.Comp
         check=False,
     )
 
-def test_defaults_to_ensure_data_and_rm_both_from_logical_path():
+def test_jbofs_rm_defaults_to_ensure_data_and_rm_both_from_logical_path():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         data_root = root / "data"
@@ -39,19 +39,19 @@ def test_defaults_to_ensure_data_and_rm_both_from_logical_path():
         assert not physical.exists()
 
 
-def test_rejects_multiple_ensure_modes():
+def test_jbofs_rm_rejects_multiple_ensure_modes():
     proc = run_helper("--ensure-logical", "--ensure-physical", "/data/logical/x")
     assert proc.returncode != 0
     assert "ensure" in proc.stderr.lower()
 
 
-def test_rejects_multiple_remove_modes():
+def test_jbofs_rm_rejects_multiple_remove_modes():
     proc = run_helper("--rm-data", "--rm-link", "/data/logical/x")
     assert proc.returncode != 0
     assert "rm-" in proc.stderr.lower()
 
 
-def test_dry_run_does_not_delete():
+def test_jbofs_rm_dry_run_does_not_delete():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         data_root = root / "data"
@@ -76,7 +76,7 @@ def test_dry_run_does_not_delete():
         assert physical.exists()
 
 
-def test_physical_path_removes_all_matching_logical_symlinks():
+def test_jbofs_rm_physical_path_removes_all_matching_logical_symlinks():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         data_root = root / "data"
@@ -105,7 +105,7 @@ def test_physical_path_removes_all_matching_logical_symlinks():
         assert not logical_b.exists()
 
 
-def test_rm_link_only_keeps_physical_data():
+def test_jbofs_rm_link_only_keeps_physical_data():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         data_root = root / "data"
@@ -130,7 +130,7 @@ def test_rm_link_only_keeps_physical_data():
         assert physical.exists()
 
 
-def test_rejects_paths_outside_data_root():
+def test_jbofs_rm_rejects_paths_outside_data_root():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         data_root = root / "data"
@@ -149,7 +149,7 @@ def test_rejects_paths_outside_data_root():
         assert "under" in proc.stderr.lower()
 
 
-def test_recursive_rm_both_from_logical_directory_removes_tree_and_data():
+def test_jbofs_rm_recursive_rm_both_from_logical_directory_removes_tree_and_data():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         data_root = root / "data"
@@ -180,7 +180,7 @@ def test_recursive_rm_both_from_logical_directory_removes_tree_and_data():
         assert not physical_b.exists()
 
 
-def test_recursive_dry_run_from_physical_directory_keeps_files():
+def test_jbofs_rm_recursive_dry_run_from_physical_directory_keeps_files():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         data_root = root / "data"

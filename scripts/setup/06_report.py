@@ -23,7 +23,7 @@ def main() -> int:
     devices = inv.get("devices", [])
     mounts = ver.get("mounts", [])
 
-    lines = ["# NVMe Data Layout Report", ""]
+    lines = ["# jbofs Data Layout Report", ""]
     lines.append("## Inventory summary")
     lines.append(f"- Total NVMe devices discovered: {len(devices)}")
     for cls in ["SAFE_CANDIDATE", "CAUTION", "BLOCKED"]:

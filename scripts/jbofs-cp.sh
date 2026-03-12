@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 Usage:
-  cp-to-nvme.sh (--disk=N | --policy=random|most-free) [-r|--recursive] [--round-robin|--batch] [-f|--force] [--dry-run] SRC LOGICAL_DEST
+  jbofs-cp.sh (--disk=N | --policy=random|most-free) [-r|--recursive] [--round-robin|--batch] [-f|--force] [--dry-run] SRC LOGICAL_DEST
 
 Environment:
   NVME_ROOT  default: /data/nvme

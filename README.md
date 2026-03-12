@@ -1,6 +1,6 @@
-# NVMe JBOD XFS Setup Toolkit
+# jbofs
 
-Safety-first scripts to inventory NVMe devices, generate an explicit setup plan, and run verification + fio benchmarks for sequential pcap-oriented workloads.
+Safety-first scripts to inventory NVMe devices, generate an explicit setup plan, and operate `jbofs`, a "just bunch of file systems" layout for sequential pcap-oriented workloads.
 
 ## Safety model
 
@@ -50,14 +50,14 @@ ls -l /data/nvme
 ls -ld /data/logical
 ```
 
-### `scripts/cp-to-nvme.sh`
+### `scripts/jbofs-cp.sh`
 
 Copies a file onto one selected NVMe backing path and creates a symlink into the logical namespace.
 
 Usage:
 
 ```bash
-bash scripts/cp-to-nvme.sh (--disk=N | --policy=random|most-free) [-r|--recursive] [--round-robin|--batch] [-f|--force] [--dry-run] SRC LOGICAL_DEST
+bash scripts/jbofs-cp.sh (--disk=N | --policy=random|most-free) [-r|--recursive] [--round-robin|--batch] [-f|--force] [--dry-run] SRC LOGICAL_DEST
 ```
 
 Rules:
@@ -87,40 +87,40 @@ ln -s /data/nvme/0/pcaps/symbol=ES/date=2026-03-11/file1.pcap /data/logical/pcap
 Or use the helper script, which copies to the chosen disk and creates the `/data/logical` symlink for you:
 
 ```bash
-bash scripts/cp-to-nvme.sh --disk=2 capture.pcap pcaps/symbol=ES/date=2026-03-11/file1.pcap
-bash scripts/cp-to-nvme.sh --policy=most-free capture.pcap pcaps/symbol=ES/date=2026-03-11/file2.pcap
-bash scripts/cp-to-nvme.sh --policy=random capture.pcap pcaps/symbol=ES/date=2026-03-11/file3.pcap
+bash scripts/jbofs-cp.sh --disk=2 capture.pcap pcaps/symbol=ES/date=2026-03-11/file1.pcap
+bash scripts/jbofs-cp.sh --policy=most-free capture.pcap pcaps/symbol=ES/date=2026-03-11/file2.pcap
+bash scripts/jbofs-cp.sh --policy=random capture.pcap pcaps/symbol=ES/date=2026-03-11/file3.pcap
 ```
 
 Dry-run example:
 
 ```bash
-bash scripts/cp-to-nvme.sh --disk=1 --dry-run capture.pcap pcaps/test/file1.pcap
+bash scripts/jbofs-cp.sh --disk=1 --dry-run capture.pcap pcaps/test/file1.pcap
 ```
 
 Recursive examples:
 
 ```bash
-bash scripts/cp-to-nvme.sh -r --policy=most-free --batch ./captures pcaps/2026-03-12
-bash scripts/cp-to-nvme.sh -r --policy=random --round-robin ./captures/ pcaps/2026-03-12
+bash scripts/jbofs-cp.sh -r --policy=most-free --batch ./captures pcaps/2026-03-12
+bash scripts/jbofs-cp.sh -r --policy=random --round-robin ./captures/ pcaps/2026-03-12
 ```
 
 If you want a shell function in `~/.bash_aliases`, use:
 
 ```bash
-cp-to-nvme() {
-  /home/fozga/r/art/nvme/scripts/cp-to-nvme.sh "$@"
+jbofs-cp() {
+  /home/fozga/r/art/nvme/scripts/jbofs-cp.sh "$@"
 }
 ```
 
-### `scripts/rm-nvme.sh`
+### `scripts/jbofs-rm.sh`
 
 Removes a logical symlink, the backing physical file, or both.
 
 Usage:
 
 ```bash
-bash scripts/rm-nvme.sh [-r|--recursive] [--ensure-logical|--ensure-physical|--ensure-data] [--rm-link|--rm-data|--rm-both] [--dry-run] PATH
+bash scripts/jbofs-rm.sh [-r|--recursive] [--ensure-logical|--ensure-physical|--ensure-data] [--rm-link|--rm-data|--rm-both] [--dry-run] PATH
 ```
 
 Defaults:
@@ -141,10 +141,10 @@ Rules:
 Examples:
 
 ```bash
-bash scripts/rm-nvme.sh --dry-run /data/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
-bash scripts/rm-nvme.sh --ensure-logical --rm-link /data/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
-bash scripts/rm-nvme.sh --ensure-physical --rm-both /data/nvme/0/pcaps/symbol=ES/date=2026-03-11/file1.pcap
-bash scripts/rm-nvme.sh -r --ensure-logical /data/logical/pcaps/2026-03-11
+bash scripts/jbofs-rm.sh --dry-run /data/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
+bash scripts/jbofs-rm.sh --ensure-logical --rm-link /data/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
+bash scripts/jbofs-rm.sh --ensure-physical --rm-both /data/nvme/0/pcaps/symbol=ES/date=2026-03-11/file1.pcap
+bash scripts/jbofs-rm.sh -r --ensure-logical /data/logical/pcaps/2026-03-11
 ```
 
 ## End-to-end workflow

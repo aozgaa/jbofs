@@ -11,8 +11,8 @@ def test_readme_includes_required_commands():
         "bash scripts/setup/05_fio_bench.sh",
         "python3 scripts/setup/06_report.py",
         "bash scripts/setup/07_aliases.sh",
-        "scripts/cp-to-nvme.sh --disk=2",
-        "scripts/rm-nvme.sh",
+        "scripts/jbofs-cp.sh --disk=2",
+        "scripts/jbofs-rm.sh",
         "/data/nvme/0",
         "/data/logical",
         "pcaps/symbol=ES/date=2026-03-11/file1.pcap",
@@ -21,7 +21,7 @@ def test_readme_includes_required_commands():
         "--round-robin",
         "--batch",
         "srcdir/ means copy the contents",
-        "bash scripts/rm-nvme.sh -r",
+        "bash scripts/jbofs-rm.sh -r",
     ]
     for cmd in required:
         assert cmd in text

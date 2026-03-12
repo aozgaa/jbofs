@@ -4,7 +4,7 @@ import tempfile
 from pathlib import Path
 
 
-SCRIPT = Path("scripts/cp-to-nvme.sh")
+SCRIPT = Path("scripts/jbofs-cp.sh")
 
 
 def run_helper(*args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -17,7 +17,7 @@ def run_helper(*args: str, env: dict[str, str] | None = None) -> subprocess.Comp
     )
 
 
-def test_requires_exactly_one_selector():
+def test_jbofs_cp_requires_exactly_one_selector():
     proc = run_helper("src", "dest")
     assert proc.returncode != 0
     assert "exactly one" in proc.stderr
@@ -27,13 +27,13 @@ def test_requires_exactly_one_selector():
     assert "exactly one" in proc.stderr
 
 
-def test_rejects_invalid_policy():
+def test_jbofs_cp_rejects_invalid_policy():
     proc = run_helper("--policy=bad", "src", "dest")
     assert proc.returncode != 0
     assert "random|most-free" in proc.stderr
 
 
-def test_explicit_disk_dry_run_renders_copy_and_symlink_commands():
+def test_jbofs_cp_explicit_disk_dry_run_renders_copy_and_symlink_commands():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "src.txt").write_text("hello\n", encoding="utf-8")
@@ -57,7 +57,7 @@ def test_explicit_disk_dry_run_renders_copy_and_symlink_commands():
         assert f"ln -s -- {root / 'nvme' / '2' / 'pcaps/symbol=ES/date=2026-03-11/file1.txt'} {root / 'logical' / 'pcaps/symbol=ES/date=2026-03-11/file1.txt'}" in proc.stdout
 
 
-def test_most_free_selects_branch_with_highest_available_space():
+def test_jbofs_cp_most_free_selects_branch_with_highest_available_space():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "src.txt").write_text("hello\n", encoding="utf-8")
@@ -85,7 +85,7 @@ def test_most_free_selects_branch_with_highest_available_space():
         assert f"{root / 'nvme' / '1' / 'file1.txt'}" in proc.stdout
 
 
-def test_recursive_requires_exactly_one_grouping_mode():
+def test_jbofs_cp_recursive_requires_exactly_one_grouping_mode():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         srcdir = root / "captures"
@@ -116,7 +116,7 @@ def test_recursive_requires_exactly_one_grouping_mode():
         assert proc.returncode != 0
 
 
-def test_recursive_batch_preserves_source_dir_without_trailing_slash():
+def test_jbofs_cp_recursive_batch_preserves_source_dir_without_trailing_slash():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         srcdir = root / "captures"
@@ -144,7 +144,7 @@ def test_recursive_batch_preserves_source_dir_without_trailing_slash():
         assert f"{root / 'logical' / 'pcaps/day1/captures/a.txt'}" in proc.stdout
 
 
-def test_recursive_round_robin_uses_rsync_style_trailing_slash_contents():
+def test_jbofs_cp_recursive_round_robin_uses_rsync_style_trailing_slash_contents():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         srcdir = root / "captures"
