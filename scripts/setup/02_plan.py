@@ -7,7 +7,7 @@ from pathlib import Path
 if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-from scripts.lib_plan import (
+from scripts.setup.lib_plan import (
     load_yaml_list,
     render_plan_markdown,
     render_plan_shell,

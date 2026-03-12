@@ -165,6 +165,6 @@ Do not run any `mkfs`, `wipefs`, partitioning, or mount automation until:
 When ready, resume toolkit flow in this repo:
 
 ```bash
-python3 scripts/01_inventory.py --output-dir artifacts
-python3 scripts/02_plan.py --inventory artifacts/inventory.json --selected config/selected-devices.yaml --protected config/protected-devices.yaml --output-dir artifacts
+python3 scripts/setup/01_inventory.py --output-dir artifacts
+python3 scripts/setup/02_plan.py --inventory artifacts/inventory.json --selected config/selected-devices.yaml --protected config/protected-devices.yaml --output-dir artifacts
 ```

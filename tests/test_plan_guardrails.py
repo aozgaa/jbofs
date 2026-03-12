@@ -1,6 +1,6 @@
 import re
 
-from scripts.lib_plan import render_plan_shell, select_approved_targets
+from scripts.setup.lib_plan import render_plan_shell, select_approved_targets
 
 
 def test_rejects_unselected_and_blocked_and_protected():

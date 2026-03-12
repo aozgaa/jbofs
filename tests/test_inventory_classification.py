@@ -1,4 +1,4 @@
-from scripts.lib_inventory import classify_device, references_device_in_fstab
+from scripts.setup.lib_inventory import classify_device, references_device_in_fstab
 
 
 def test_classify_safe_candidate():

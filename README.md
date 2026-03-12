@@ -5,7 +5,7 @@ Safety-first scripts to inventory NVMe devices, generate an explicit setup plan,
 ## Safety model
 
 - Default behavior is non-destructive.
-- `scripts/03_apply.sh` refuses to execute without `--apply --confirm <token>`.
+- `scripts/setup/03_apply.sh` refuses to execute without `--apply --confirm <token>`.
 - Devices are controlled by two explicit lists:
   - `config/selected-devices.yaml`
   - `config/protected-devices.yaml`
@@ -20,7 +20,7 @@ Safety-first scripts to inventory NVMe devices, generate an explicit setup plan,
 Create the alias paths and the `/data/logical` namespace after the NVMe mounts are in place:
 
 ```bash
-bash scripts/07_aliases.sh
+bash scripts/setup/07_aliases.sh
 ```
 
 This script is required before using `--disk=N` with helper scripts. It creates:
@@ -32,7 +32,7 @@ This script is required before using `--disk=N` with helper scripts. It creates:
 
 ## Helper scripts
 
-### `scripts/07_aliases.sh`
+### `scripts/setup/07_aliases.sh`
 
 Creates the numeric aliases under `/data/nvme` and ensures `/data/logical` exists.
 
@@ -45,7 +45,7 @@ Environment:
 Typical usage:
 
 ```bash
-bash scripts/07_aliases.sh
+bash scripts/setup/07_aliases.sh
 ls -l /data/nvme
 ls -ld /data/logical
 ```
@@ -65,7 +65,7 @@ Rules:
 - Exactly one of `--disk=N` or `--policy=random|most-free` is required.
 - `LOGICAL_DEST` is relative to `/data/logical`.
 - The top-level category is part of `LOGICAL_DEST`, for example `pcaps/...`, `logs/...`, or `captures/...`.
-- `--disk=N` requires that `/data/nvme/N` already exists, usually from `scripts/07_aliases.sh`.
+- `--disk=N` requires that `/data/nvme/N` already exists, usually from `scripts/setup/07_aliases.sh`.
 - Recursive mode requires exactly one of `--round-robin` or `--batch`.
 - `--round-robin` assigns files one by one across numeric NVMe aliases.
 - `--batch` assigns the whole recursive copy to one selected disk.
@@ -152,7 +152,7 @@ bash scripts/rm-nvme.sh -r --ensure-logical /data/logical/pcaps/2026-03-11
 1. Inventory hardware and current mounts.
 
 ```bash
-python3 scripts/01_inventory.py --output-dir artifacts
+python3 scripts/setup/01_inventory.py --output-dir artifacts
 ```
 
 2. Review `artifacts/inventory.md`, then set explicit selections/protections:
@@ -173,7 +173,7 @@ protected_devices:
 3. Generate a guarded setup plan (still not applied):
 
 ```bash
-python3 scripts/02_plan.py \
+python3 scripts/setup/02_plan.py \
   --inventory artifacts/inventory.json \
   --selected config/selected-devices.yaml \
   --protected config/protected-devices.yaml \
@@ -185,26 +185,26 @@ python3 scripts/02_plan.py \
 5. Apply only when ready, with explicit confirmation token printed by step 3:
 
 ```bash
-bash scripts/03_apply.sh --plan artifacts/setup-plan.sh --apply --confirm <token>
+bash scripts/setup/03_apply.sh --plan artifacts/setup-plan.sh --apply --confirm <token>
 ```
 
 6. Verify mounts and optionally test write access:
 
 ```bash
-python3 scripts/04_verify.py --mount-root /data/nvme --probe-write --output-dir artifacts
+python3 scripts/setup/04_verify.py --mount-root /data/nvme --probe-write --output-dir artifacts
 ```
 
 7. Run fio benchmarks (dry-run first, then apply):
 
 ```bash
-bash scripts/05_fio_bench.sh --mount-root /data/nvme --dry-run
-bash scripts/05_fio_bench.sh --mount-root /data/nvme --profiles seq_write,seq_read,mixed_iter --runtime 60 --apply
+bash scripts/setup/05_fio_bench.sh --mount-root /data/nvme --dry-run
+bash scripts/setup/05_fio_bench.sh --mount-root /data/nvme --profiles seq_write,seq_read,mixed_iter --runtime 60 --apply
 ```
 
 8. Build a consolidated report:
 
 ```bash
-python3 scripts/06_report.py --inventory artifacts/inventory.json --verify artifacts/verify.json --output artifacts/report.md
+python3 scripts/setup/06_report.py --inventory artifacts/inventory.json --verify artifacts/verify.json --output artifacts/report.md
 ```
 
 ## Artifacts
