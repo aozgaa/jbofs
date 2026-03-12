@@ -102,6 +102,38 @@ cp-to-nvme() {
 }
 ```
 
+### `scripts/rm-nvme.sh`
+
+Removes a logical symlink, the backing physical file, or both.
+
+Usage:
+
+```bash
+bash scripts/rm-nvme.sh [--ensure-logical|--ensure-physical|--ensure-data] [--rm-link|--rm-data|--rm-both] [--dry-run] PATH
+```
+
+Defaults:
+
+- `--ensure-data`
+- `--rm-both`
+
+Rules:
+
+- Ensure flags are mutually exclusive.
+- Remove flags are mutually exclusive.
+- The input path must be under `/data`.
+- `--ensure-logical` restricts the input to `/data/logical/...`.
+- `--ensure-physical` restricts the input to `/data/nvme/...`, including both stable mount paths and numeric aliases.
+- When removing by physical path, all matching logical symlinks under `/data/logical` are removed.
+
+Examples:
+
+```bash
+bash scripts/rm-nvme.sh --dry-run /data/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
+bash scripts/rm-nvme.sh --ensure-logical --rm-link /data/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
+bash scripts/rm-nvme.sh --ensure-physical --rm-both /data/nvme/0/pcaps/symbol=ES/date=2026-03-11/file1.pcap
+```
+
 ## End-to-end workflow
 
 1. Inventory hardware and current mounts.

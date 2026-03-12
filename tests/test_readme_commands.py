@@ -12,9 +12,12 @@ def test_readme_includes_required_commands():
         "python3 scripts/06_report.py",
         "bash scripts/07_aliases.sh",
         "scripts/cp-to-nvme.sh --disk=2",
+        "scripts/rm-nvme.sh",
         "/data/nvme/0",
         "/data/logical",
         "pcaps/symbol=ES/date=2026-03-11/file1.pcap",
+        "--dry-run /data/logical",
+        "--ensure-physical --rm-both /data/nvme/0",
     ]
     for cmd in required:
         assert cmd in text
