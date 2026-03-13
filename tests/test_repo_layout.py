@@ -8,6 +8,11 @@ def test_expected_top_level_paths_exist():
         Path("config/protected-devices.yaml"),
         Path("config/selected-devices.yaml"),
         Path("artifacts"),
+        Path("docs/developer-guide.md"),
+        Path("docs/design.md"),
+        Path("docs/setup-guide.md"),
+        Path("docs/user-guide.md"),
+        Path("docs/benchmarking.md"),
     ]
     missing = [p for p in expected if not p.exists()]
     assert not missing, f"Missing paths: {missing}"
