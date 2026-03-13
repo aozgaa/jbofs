@@ -18,6 +18,7 @@ The command surface is:
 Read next:
 
 - [docs/design.md](/home/fozga/r/art/nvme/docs/design.md)
+- [docs/comparison.md](/home/fozga/r/art/nvme/docs/comparison.md)
 - [docs/setup-guide.md](/home/fozga/r/art/nvme/docs/setup-guide.md)
 - [docs/user-guide.md](/home/fozga/r/art/nvme/docs/user-guide.md)
 - [docs/benchmarking.md](/home/fozga/r/art/nvme/docs/benchmarking.md)

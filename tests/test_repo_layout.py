@@ -10,6 +10,7 @@ def test_expected_top_level_paths_exist():
         Path("artifacts"),
         Path("docs/developer-guide.md"),
         Path("docs/design.md"),
+        Path("docs/comparison.md"),
         Path("docs/setup-guide.md"),
         Path("docs/user-guide.md"),
         Path("docs/benchmarking.md"),
