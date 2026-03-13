@@ -23,3 +23,4 @@ Read next:
 - [docs/user-guide.md](/home/fozga/r/art/nvme/docs/user-guide.md)
 - [docs/benchmarking.md](/home/fozga/r/art/nvme/docs/benchmarking.md)
 - [docs/developer-guide.md](/home/fozga/r/art/nvme/docs/developer-guide.md)
+- [docs/agent-handoff.md](/home/fozga/r/art/nvme/docs/agent-handoff.md)

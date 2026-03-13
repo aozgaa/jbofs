@@ -9,6 +9,7 @@ def test_expected_top_level_paths_exist():
         Path("config/selected-devices.yaml"),
         Path("artifacts"),
         Path("docs/developer-guide.md"),
+        Path("docs/agent-handoff.md"),
         Path("docs/design.md"),
         Path("docs/comparison.md"),
         Path("docs/setup-guide.md"),

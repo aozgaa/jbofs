@@ -11,6 +11,7 @@ def test_readme_includes_required_commands():
         "scripts/jbofs-sync.sh",
         "scripts/jbofs-prune.sh",
         "docs/developer-guide.md",
+        "docs/agent-handoff.md",
         "docs/design.md",
         "docs/comparison.md",
         "docs/setup-guide.md",
