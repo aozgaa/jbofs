@@ -37,32 +37,32 @@ def test_jbofs_cp_explicit_disk_dry_run_renders_copy_and_symlink_commands():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "src.txt").write_text("hello\n", encoding="utf-8")
-        (root / "nvme" / "2").mkdir(parents=True)
+        (root / "aliased" / "disk-2").mkdir(parents=True)
         (root / "logical").mkdir(parents=True)
 
         proc = run_helper(
-            "--disk=2",
+            "--disk=disk-2",
             "--dry-run",
             str(root / "src.txt"),
             "pcaps/symbol=ES/date=2026-03-11/file1.txt",
             env={
                 **os.environ,
-                "NVME_ROOT": str(root / "nvme"),
+                "ALIASED_ROOT": str(root / "aliased"),
                 "LOGICAL_ROOT": str(root / "logical"),
             },
         )
 
         assert proc.returncode == 0
-        assert f"cp -a -- {root / 'src.txt'} {root / 'nvme' / '2' / 'pcaps/symbol=ES/date=2026-03-11/file1.txt'}" in proc.stdout
-        assert f"ln -s -- {root / 'nvme' / '2' / 'pcaps/symbol=ES/date=2026-03-11/file1.txt'} {root / 'logical' / 'pcaps/symbol=ES/date=2026-03-11/file1.txt'}" in proc.stdout
+        assert f"cp -a -- {root / 'src.txt'} {root / 'aliased' / 'disk-2' / 'pcaps/symbol=ES/date=2026-03-11/file1.txt'}" in proc.stdout
+        assert f"ln -s -- {root / 'aliased' / 'disk-2' / 'pcaps/symbol=ES/date=2026-03-11/file1.txt'} {root / 'logical' / 'pcaps/symbol=ES/date=2026-03-11/file1.txt'}" in proc.stdout
 
 
 def test_jbofs_cp_most_free_selects_branch_with_highest_available_space():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "src.txt").write_text("hello\n", encoding="utf-8")
-        for disk in ("0", "1", "2", "3"):
-            (root / "nvme" / disk).mkdir(parents=True)
+        for disk in ("disk-0", "disk-1", "disk-2", "disk-3"):
+            (root / "aliased" / disk).mkdir(parents=True)
         (root / "logical").mkdir(parents=True)
 
         proc = run_helper(
@@ -72,17 +72,17 @@ def test_jbofs_cp_most_free_selects_branch_with_highest_available_space():
             "file1.txt",
             env={
                 **os.environ,
-                "NVME_ROOT": str(root / "nvme"),
+                "ALIASED_ROOT": str(root / "aliased"),
                 "LOGICAL_ROOT": str(root / "logical"),
-                "NVME_AVAIL_KB_0": "100",
-                "NVME_AVAIL_KB_1": "500",
-                "NVME_AVAIL_KB_2": "200",
-                "NVME_AVAIL_KB_3": "300",
+                "ALIASED_AVAIL_KB_disk_0": "100",
+                "ALIASED_AVAIL_KB_disk_1": "500",
+                "ALIASED_AVAIL_KB_disk_2": "200",
+                "ALIASED_AVAIL_KB_disk_3": "300",
             },
         )
 
         assert proc.returncode == 0
-        assert f"{root / 'nvme' / '1' / 'file1.txt'}" in proc.stdout
+        assert f"{root / 'aliased' / 'disk-1' / 'file1.txt'}" in proc.stdout
 
 
 def test_jbofs_cp_recursive_requires_exactly_one_grouping_mode():
@@ -91,7 +91,7 @@ def test_jbofs_cp_recursive_requires_exactly_one_grouping_mode():
         srcdir = root / "captures"
         srcdir.mkdir()
         (srcdir / "a.txt").write_text("a\n", encoding="utf-8")
-        (root / "nvme" / "0").mkdir(parents=True)
+        (root / "aliased" / "disk-0").mkdir(parents=True)
         (root / "logical").mkdir(parents=True)
 
         proc = run_helper(
@@ -99,7 +99,7 @@ def test_jbofs_cp_recursive_requires_exactly_one_grouping_mode():
             "--policy=random",
             str(srcdir),
             "pcaps/day1",
-            env={**os.environ, "NVME_ROOT": str(root / "nvme"), "LOGICAL_ROOT": str(root / "logical")},
+            env={**os.environ, "ALIASED_ROOT": str(root / "aliased"), "LOGICAL_ROOT": str(root / "logical")},
         )
         assert proc.returncode != 0
         assert "round-robin" in proc.stderr.lower() or "batch" in proc.stderr.lower()
@@ -111,7 +111,7 @@ def test_jbofs_cp_recursive_requires_exactly_one_grouping_mode():
             "--batch",
             str(srcdir),
             "pcaps/day1",
-            env={**os.environ, "NVME_ROOT": str(root / "nvme"), "LOGICAL_ROOT": str(root / "logical")},
+            env={**os.environ, "ALIASED_ROOT": str(root / "aliased"), "LOGICAL_ROOT": str(root / "logical")},
         )
         assert proc.returncode != 0
 
@@ -122,7 +122,7 @@ def test_jbofs_cp_recursive_batch_preserves_source_dir_without_trailing_slash():
         srcdir = root / "captures"
         srcdir.mkdir()
         (srcdir / "a.txt").write_text("a\n", encoding="utf-8")
-        (root / "nvme" / "1").mkdir(parents=True)
+        (root / "aliased" / "disk-1").mkdir(parents=True)
         (root / "logical").mkdir(parents=True)
 
         proc = run_helper(
@@ -134,13 +134,13 @@ def test_jbofs_cp_recursive_batch_preserves_source_dir_without_trailing_slash():
             "pcaps/day1",
             env={
                 **os.environ,
-                "NVME_ROOT": str(root / "nvme"),
+                "ALIASED_ROOT": str(root / "aliased"),
                 "LOGICAL_ROOT": str(root / "logical"),
-                "NVME_AVAIL_KB_1": "1000",
+                "ALIASED_AVAIL_KB_disk_1": "1000",
             },
         )
         assert proc.returncode == 0
-        assert f"{root / 'nvme' / '1' / 'pcaps/day1/captures/a.txt'}" in proc.stdout
+        assert f"{root / 'aliased' / 'disk-1' / 'pcaps/day1/captures/a.txt'}" in proc.stdout
         assert f"{root / 'logical' / 'pcaps/day1/captures/a.txt'}" in proc.stdout
 
 
@@ -151,8 +151,8 @@ def test_jbofs_cp_recursive_round_robin_uses_rsync_style_trailing_slash_contents
         srcdir.mkdir()
         (srcdir / "a.txt").write_text("a\n", encoding="utf-8")
         (srcdir / "b.txt").write_text("b\n", encoding="utf-8")
-        for disk in ("0", "1"):
-            (root / "nvme" / disk).mkdir(parents=True)
+        for disk in ("disk-0", "disk-1"):
+            (root / "aliased" / disk).mkdir(parents=True)
         (root / "logical").mkdir(parents=True)
 
         proc = run_helper(
@@ -162,10 +162,10 @@ def test_jbofs_cp_recursive_round_robin_uses_rsync_style_trailing_slash_contents
             "--dry-run",
             str(srcdir) + "/",
             "pcaps/day1",
-            env={**os.environ, "NVME_ROOT": str(root / "nvme"), "LOGICAL_ROOT": str(root / "logical")},
+            env={**os.environ, "ALIASED_ROOT": str(root / "aliased"), "LOGICAL_ROOT": str(root / "logical")},
         )
         assert proc.returncode == 0
-        assert f"{root / 'nvme' / '0' / 'pcaps/day1/a.txt'}" in proc.stdout
-        assert f"{root / 'nvme' / '1' / 'pcaps/day1/b.txt'}" in proc.stdout
+        assert f"{root / 'aliased' / 'disk-0' / 'pcaps/day1/a.txt'}" in proc.stdout
+        assert f"{root / 'aliased' / 'disk-1' / 'pcaps/day1/b.txt'}" in proc.stdout
         assert f"{root / 'logical' / 'pcaps/day1/a.txt'}" in proc.stdout
         assert f"{root / 'logical' / 'pcaps/day1/b.txt'}" in proc.stdout

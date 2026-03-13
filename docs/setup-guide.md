@@ -9,7 +9,7 @@ After setup is complete, proceed to:
 
 ## Prerequisites
 
-- The target NVMe devices are physically visible to Linux.
+- The target storage devices are physically visible to Linux.
 - The system/root disk is known and will be protected.
 - Required packages are installed.
 
@@ -80,24 +80,26 @@ This formats the selected disks with XFS, mounts them, and appends `fstab` entri
 ## 5. Verify Mounts
 
 ```bash
-python3 scripts/setup/04_verify.py --mount-root /data/nvme --probe-write --output-dir artifacts
+python3 scripts/setup/04_verify.py --mount-root /srv/jbofs/raw --probe-write --output-dir artifacts
 sed -n '1,200p' artifacts/verify.md
 ```
 
 Fresh mountpoints may be owned by `root:root`. If the write probe fails with `EACCES`, fix ownership first.
 
-## 6. Create Numeric Aliases and Logical Namespace
+## 6. Create Alias Namespace and Logical Filesystem
 
 ```bash
 bash scripts/setup/07_aliases.sh
-ls -l /data/nvme
-ls -ld /data/logical
+ls -l /srv/jbofs/raw
+ls -l /srv/jbofs/aliased
+ls -ld /srv/jbofs/logical
 ```
 
 This creates:
 
-- `/data/nvme/0..N` symlinks to the stable mount roots
-- `/data/logical` on the root filesystem
+- `/srv/jbofs/raw/<stable-id>` as the canonical filesystem mount roots
+- `/srv/jbofs/aliased/disk-N` as convenience symlinks to the raw roots
+- `/srv/jbofs/logical` as the singular logical symlink filesystem
 
 At this point setup is complete.
 

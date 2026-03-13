@@ -37,8 +37,8 @@ The main semantic questions are:
 `jbofs` is a small operational model rather than a new filesystem:
 
 - one filesystem per disk
-- direct physical storage under `/data/nvme/<stable-id>` or `/data/nvme/<n>`
-- logical symlink namespace under `/data/logical`
+- direct physical storage under `/srv/jbofs/raw/<stable-id>` or `/srv/jbofs/aliased/disk-N`
+- logical symlink namespace under `/srv/jbofs/logical`
 - explicit write, remove, sync, and prune commands
 
 ### What it does well

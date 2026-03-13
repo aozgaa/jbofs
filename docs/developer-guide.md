@@ -51,9 +51,9 @@ Operational `jbofs` helpers stay at `scripts/`:
 
 ## Namespace Model
 
-- Physical data lives on XFS filesystems mounted under `/data/nvme/<stable-id>`.
-- Friendly aliases `/data/nvme/0..3` are created by `scripts/setup/07_aliases.sh`.
-- Logical symlinks live under `/data/logical`.
+- Physical data lives on XFS filesystems mounted under `/srv/jbofs/raw/<stable-id>`.
+- Friendly aliases `/srv/jbofs/aliased/disk-N` are created by `scripts/setup/07_aliases.sh`.
+- Logical symlinks live under `/srv/jbofs/logical`.
 
 The alias script must run before helpers that rely on numeric disk aliases.
 

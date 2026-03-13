@@ -7,7 +7,7 @@ Before benchmarking, complete [Setup Guide](/home/fozga/r/art/nvme/docs/setup-gu
 ## Run fio in Dry-Run Mode First
 
 ```bash
-bash scripts/setup/05_fio_bench.sh --mount-root /data/nvme --dry-run
+bash scripts/setup/05_fio_bench.sh --mount-root /srv/jbofs/raw --dry-run
 ```
 
 This prints the fio commands without executing them.
@@ -17,13 +17,13 @@ This prints the fio commands without executing them.
 Run the default profile set:
 
 ```bash
-bash scripts/setup/05_fio_bench.sh --mount-root /data/nvme --profiles seq_write,seq_read,mixed_iter --runtime 60 --apply
+bash scripts/setup/05_fio_bench.sh --mount-root /srv/jbofs/raw --profiles seq_write,seq_read,mixed_iter --runtime 60 --apply
 ```
 
 Run in parallel across all mounts:
 
 ```bash
-bash scripts/setup/05_fio_bench.sh --mount-root /data/nvme --profiles seq_write,seq_read,mixed_iter --runtime 60 --parallel --apply
+bash scripts/setup/05_fio_bench.sh --mount-root /srv/jbofs/raw --profiles seq_write,seq_read,mixed_iter --runtime 60 --parallel --apply
 ```
 
 Outputs are written under:

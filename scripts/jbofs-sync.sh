@@ -7,8 +7,9 @@ Usage:
   jbofs-sync.sh [--disk=N | --disk-path PATH] [--logical-prefix RELPATH] [--dry-run]
 
 Environment:
-  NVME_ROOT     default: /data/nvme
-  LOGICAL_ROOT  default: /data/logical
+  RAW_ROOT      default: /srv/jbofs/raw
+  ALIASED_ROOT  default: /srv/jbofs/aliased
+  LOGICAL_ROOT  default: /srv/jbofs/logical
 EOF
 }
 
@@ -31,8 +32,9 @@ under_root() {
   [[ "$path" == "$root" || "$path" == "$root"/* ]]
 }
 
-NVME_ROOT="${NVME_ROOT:-/data/nvme}"
-LOGICAL_ROOT="${LOGICAL_ROOT:-/data/logical}"
+RAW_ROOT="${RAW_ROOT:-/srv/jbofs/raw}"
+ALIASED_ROOT="${ALIASED_ROOT:-/srv/jbofs/aliased}"
+LOGICAL_ROOT="${LOGICAL_ROOT:-/srv/jbofs/logical}"
 DISK=""
 DISK_PATH=""
 LOGICAL_PREFIX=""
@@ -78,15 +80,16 @@ LOGICAL_PREFIX="${LOGICAL_PREFIX#/}"
 [[ "$LOGICAL_PREFIX" != ../* ]] || fail "logical prefix must be relative"
 [[ "$LOGICAL_PREFIX" != *"/../"* ]] || fail "logical prefix must be relative"
 
-NVME_ROOT_ABS="$(normalize_lex "$NVME_ROOT")"
+RAW_ROOT_ABS="$(normalize_lex "$RAW_ROOT")"
+ALIASED_ROOT_ABS="$(normalize_lex "$ALIASED_ROOT")"
 LOGICAL_ROOT_ABS="$(normalize_lex "$LOGICAL_ROOT")"
 
-mapfile -t stable_roots < <(find "$NVME_ROOT_ABS" -mindepth 1 -maxdepth 1 -type d | sort)
+mapfile -t stable_roots < <(find "$RAW_ROOT_ABS" -mindepth 1 -maxdepth 1 -type d | sort)
 
 declare -a scan_pairs=()
 
 if [[ -n "$DISK" ]]; then
-  alias_path="$NVME_ROOT_ABS/$DISK"
+  alias_path="$ALIASED_ROOT_ABS/$DISK"
   [[ -e "$alias_path" ]] || fail "disk alias not found: $alias_path"
   stable_root="$(readlink -f -- "$alias_path")"
   [[ -d "$stable_root" ]] || fail "resolved disk path is not a directory: $stable_root"
@@ -94,7 +97,10 @@ if [[ -n "$DISK" ]]; then
 elif [[ -n "$DISK_PATH" ]]; then
   [[ -e "$DISK_PATH" ]] || fail "disk path not found: $DISK_PATH"
   scan_path="$(readlink -f -- "$DISK_PATH")"
-  under_root "$(normalize_lex "$scan_path")" "$NVME_ROOT_ABS" || fail "disk path must be under $NVME_ROOT_ABS"
+  scan_path="$(normalize_lex "$scan_path")"
+  if ! under_root "$scan_path" "$RAW_ROOT_ABS" && ! under_root "$scan_path" "$ALIASED_ROOT_ABS"; then
+    fail "disk path must be under $RAW_ROOT_ABS or $ALIASED_ROOT_ABS"
+  fi
   matched_root=""
   for root in "${stable_roots[@]}"; do
     if under_root "$scan_path" "$root"; then

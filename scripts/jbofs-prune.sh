@@ -7,7 +7,7 @@ Usage:
   jbofs-prune.sh [--logical-prefix RELPATH] [--dry-run]
 
 Environment:
-  LOGICAL_ROOT  default: /data/logical
+  LOGICAL_ROOT  default: /srv/jbofs/logical
 EOF
 }
 
@@ -30,7 +30,7 @@ under_root() {
   [[ "$path" == "$root" || "$path" == "$root"/* ]]
 }
 
-LOGICAL_ROOT="${LOGICAL_ROOT:-/data/logical}"
+LOGICAL_ROOT="${LOGICAL_ROOT:-/srv/jbofs/logical}"
 LOGICAL_PREFIX=""
 DRY_RUN=0
 

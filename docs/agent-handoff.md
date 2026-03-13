@@ -6,7 +6,7 @@ This file is a high-signal handoff for a subsequent agent or LLM working in this
 
 `jbofs` is a "just bunch of file systems" workflow for:
 
-- one filesystem per NVMe disk
+- one filesystem per selected storage device
 - explicit physical file placement
 - a separate logical symlink namespace
 - small helper scripts for copy/remove/repair
@@ -17,12 +17,12 @@ The repo is not implementing a new filesystem. It is codifying an operational mo
 
 Physical storage:
 
-- canonical mounts: `/data/nvme/<stable-id>/...`
-- short aliases: `/data/nvme/0..N`
+- canonical mounts: `/srv/jbofs/raw/<stable-id>/...`
+- short aliases: `/srv/jbofs/aliased/disk-N`
 
 Logical namespace:
 
-- symlinks under `/data/logical/...`
+- symlinks under `/srv/jbofs/logical/...`
 
 Core command surface:
 
@@ -76,9 +76,9 @@ We evaluated it seriously. `mergerfs` is a valid alternative and now has documen
 
 This split is intentional to reduce accidental destructive repair actions.
 
-### Why numeric aliases exist
+### Why filesystem aliases exist
 
-Stable IDs are the canonical mount roots, but numeric aliases are much easier for humans to use when placing files. `scripts/setup/07_aliases.sh` builds `/data/nvme/0..N` from the selected stable mounts.
+Stable IDs are the canonical mount roots, but `disk-N` aliases are much easier for humans to use when placing files. `scripts/setup/07_aliases.sh` builds `/srv/jbofs/aliased/disk-N` from the selected raw mounts.
 
 ### Recursive copy semantics
 
@@ -96,7 +96,7 @@ Recursive copy requires exactly one grouping mode:
 
 - default is `--ensure-data --rm-both`
 - can operate from logical or physical paths
-- physical input accepts both stable roots and numeric aliases
+- physical input accepts both raw roots and aliased roots
 - removing by physical path removes all matching logical symlinks
 
 ## Known Edge Cases Already Solved

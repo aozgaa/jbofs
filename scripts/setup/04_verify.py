@@ -17,7 +17,7 @@ def _xfs_mounts() -> list[dict]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Verify mounted XFS targets")
-    parser.add_argument("--mount-root", default="/data/nvme")
+    parser.add_argument("--mount-root", default="/srv/jbofs/raw")
     parser.add_argument("--output-dir", default="artifacts")
     parser.add_argument("--probe-write", action="store_true")
     args = parser.parse_args()
@@ -37,7 +37,7 @@ def main() -> int:
             "probe_write": "skipped",
         }
         if args.probe_write:
-            p = Path(target) / ".nvme_verify_write"
+            p = Path(target) / ".jbofs_verify_write"
             try:
                 p.write_text("ok\n", encoding="utf-8")
                 p.unlink(missing_ok=True)

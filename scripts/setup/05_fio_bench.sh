@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-MOUNT_ROOT="/data/nvme"
+MOUNT_ROOT="/srv/jbofs/raw"
 PROFILES="seq_write,seq_read,mixed_iter"
 RUNTIME=60
 PARALLEL=0

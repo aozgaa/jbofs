@@ -1,12 +1,12 @@
 # Design
 
-`jbofs` is a "just bunch of file systems" layout for storing files explicitly on multiple independent XFS-backed NVMe disks while presenting a separate logical namespace of symlinks.
+`jbofs` is a "just bunch of file systems" layout for storing files explicitly on multiple independent XFS-backed filesystems while presenting a separate logical namespace of symlinks.
 
 ## Core Model
 
-- Physical files live on independent filesystems under `/data/nvme/<stable-id>/...`
-- Friendly aliases `/data/nvme/0..N` provide short write targets
-- Logical symlinks live under `/data/logical/...`
+- Raw filesystems live under `/srv/jbofs/raw/<stable-id>/...`
+- Aliased filesystems live under `/srv/jbofs/aliased/disk-N/...`
+- Logical symlinks live under `/srv/jbofs/logical/...`
 
 This means physical placement is explicit, while user-facing paths can stay stable and category-oriented.
 
@@ -30,31 +30,31 @@ Reasons:
 Physical path:
 
 ```text
-/data/nvme/0/pcaps/symbol=ES/date=2026-03-11/file1.pcap
+/srv/jbofs/aliased/disk-0/pcaps/symbol=ES/date=2026-03-11/file1.pcap
 ```
 
 Logical path:
 
 ```text
-/data/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
+/srv/jbofs/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
 ```
 
 The logical path is a symlink pointing at the physical file.
 
-## Stable IDs and Numeric Aliases
+## Raw and Aliased Filesystems
 
-Stable mount roots under `/data/nvme/<stable-id>` are the canonical identity for each disk. Numeric aliases under `/data/nvme/0..N` are convenience symlinks created after setup.
+Raw mount roots under `/srv/jbofs/raw/<stable-id>` are the canonical identity for each filesystem. Aliased roots under `/srv/jbofs/aliased/disk-N` are convenience symlinks created after setup.
 
 This split exists because:
 
-- stable IDs survive device enumeration changes better than `/dev/nvmeXn1`
-- numeric aliases are much easier to type during day-to-day use
+- stable IDs survive device enumeration changes better than transient block-device names
+- `disk-N` aliases are much easier to type during day-to-day use
 
 ## Explicit Placement
 
 `jbofs-cp.sh` requires either:
 
-- `--disk=N`
+- `--disk=disk-N`
 - or a placement policy such as `--policy=most-free` or `--policy=random`
 
 This keeps disk choice explicit at the command boundary. The system does not silently rebalance or choose hidden placement rules.
@@ -93,7 +93,7 @@ This makes recursive placement predictable instead of implicit.
 
 ## Non-Goals
 
-- no transparent pooled mount like `/data/pcap`
+- no transparent pooled mount like `/srv/jbofs/data`
 - no automatic rebalance
 - no data redundancy
 - no background healing

@@ -36,7 +36,7 @@ def test_jbofs_prune_keeps_valid_symlinks():
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         logical_root = root / "logical"
-        target = root / "nvme" / "nvme-AAA" / "pcaps" / "day1" / "a.pcap"
+        target = root / "raw" / "nvme-AAA" / "pcaps" / "day1" / "a.pcap"
         link = logical_root / "pcaps" / "day1" / "a.pcap"
         target.parent.mkdir(parents=True)
         link.parent.mkdir(parents=True)

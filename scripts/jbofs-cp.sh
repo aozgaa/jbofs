@@ -7,8 +7,8 @@ Usage:
   jbofs-cp.sh (--disk=N | --policy=random|most-free) [-r|--recursive] [--round-robin|--batch] [-f|--force] [--dry-run] SRC LOGICAL_DEST
 
 Environment:
-  NVME_ROOT  default: /data/nvme
-  LOGICAL_ROOT  default: /data/logical
+  ALIASED_ROOT  default: /srv/jbofs/aliased
+  LOGICAL_ROOT  default: /srv/jbofs/logical
 EOF
 }
 
@@ -17,8 +17,8 @@ fail() {
   exit 1
 }
 
-NVME_ROOT="${NVME_ROOT:-/data/nvme}"
-LOGICAL_ROOT="${LOGICAL_ROOT:-/data/logical}"
+ALIASED_ROOT="${ALIASED_ROOT:-/srv/jbofs/aliased}"
+LOGICAL_ROOT="${LOGICAL_ROOT:-/srv/jbofs/logical}"
 DISK=""
 POLICY=""
 FORCE=0
@@ -123,17 +123,17 @@ else
 fi
 
 list_disks() {
-  find "$NVME_ROOT" -mindepth 1 -maxdepth 1 \( -type l -o -type d \) -printf '%f\n' | grep -E '^[0-9]+$' | sort -V
+  find "$ALIASED_ROOT" -mindepth 1 -maxdepth 1 \( -type l -o -type d \) -printf '%f\n' | grep -E '^disk-[0-9]+$' | sort -V
 }
 
 disk_avail_kb() {
   local disk="$1"
-  local env_name="NVME_AVAIL_KB_${disk}"
+  local env_name="ALIASED_AVAIL_KB_${disk//-/_}"
   if [[ -n "${!env_name:-}" ]]; then
     printf '%s\n' "${!env_name}"
     return
   fi
-  df -Pk "$NVME_ROOT/$disk" | awk 'NR==2 {print $4}'
+  df -Pk "$ALIASED_ROOT/$disk" | awk 'NR==2 {print $4}'
 }
 
 select_disk() {
@@ -144,7 +144,7 @@ select_disk() {
   fi
 
   mapfile -t disks < <(list_disks)
-  [[ "${#disks[@]}" -gt 0 ]] || fail "no numeric nvme aliases found under $NVME_ROOT"
+  [[ "${#disks[@]}" -gt 0 ]] || fail "no filesystem aliases found under $ALIASED_ROOT"
 
   if [[ "$POLICY" == "random" ]]; then
     printf '%s\n' "${disks[RANDOM % ${#disks[@]}]}"
@@ -168,10 +168,10 @@ copy_one() {
   local src_file="$1"
   local logical_rel="$2"
   local chosen_disk="$3"
-  local real_dest="$NVME_ROOT/$chosen_disk/$logical_rel"
+  local real_dest="$ALIASED_ROOT/$chosen_disk/$logical_rel"
   local link_dest="$LOGICAL_ROOT/$logical_rel"
 
-  [[ -e "$NVME_ROOT/$chosen_disk" ]] || fail "target disk alias not found: $NVME_ROOT/$chosen_disk"
+  [[ -e "$ALIASED_ROOT/$chosen_disk" ]] || fail "target filesystem alias not found: $ALIASED_ROOT/$chosen_disk"
 
   if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "mkdir -p -- $(dirname "$real_dest")"
@@ -230,7 +230,7 @@ for src_file in "${source_files[@]}"; do
     chosen_disk="$batch_disk"
   else
     mapfile -t disks < <(list_disks)
-    [[ "${#disks[@]}" -gt 0 ]] || fail "no numeric nvme aliases found under $NVME_ROOT"
+    [[ "${#disks[@]}" -gt 0 ]] || fail "no filesystem aliases found under $ALIASED_ROOT"
     chosen_disk="${disks[$((idx % ${#disks[@]}))]}"
   fi
   copy_one "$src_file" "$logical_rel" "$chosen_disk"

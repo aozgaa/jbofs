@@ -5,8 +5,8 @@ def test_expected_top_level_paths_exist():
     expected = [
         Path("scripts"),
         Path("scripts/setup"),
-        Path("config/protected-devices.yaml"),
-        Path("config/selected-devices.yaml"),
+        Path("config"),
+        Path("config/.gitignore"),
         Path("artifacts"),
         Path("docs/developer-guide.md"),
         Path("docs/agent-handoff.md"),

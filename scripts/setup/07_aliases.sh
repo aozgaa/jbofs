@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-NVME_ROOT="${NVME_ROOT:-/data/nvme}"
-LOGICAL_ROOT="${LOGICAL_ROOT:-/data/logical}"
+RAW_ROOT="${RAW_ROOT:-/srv/jbofs/raw}"
+ALIASED_ROOT="${ALIASED_ROOT:-/srv/jbofs/aliased}"
+LOGICAL_ROOT="${LOGICAL_ROOT:-/srv/jbofs/logical}"
 SELECTED_CONFIG="${SELECTED_CONFIG:-config/selected-devices.yaml}"
 
 if [[ ! -f "$SELECTED_CONFIG" ]]; then
@@ -17,12 +18,12 @@ if [[ "${#selected_ids[@]}" -eq 0 ]]; then
   exit 1
 fi
 
-sudo mkdir -p "$LOGICAL_ROOT"
+sudo mkdir -p "$ALIASED_ROOT" "$LOGICAL_ROOT"
 
 index=0
 for stable_id in "${selected_ids[@]}"; do
-  target="$NVME_ROOT/$stable_id"
-  alias_path="$NVME_ROOT/$index"
+  target="$RAW_ROOT/$stable_id"
+  alias_path="$ALIASED_ROOT/disk-$index"
   if [[ ! -e "$target" ]]; then
     echo "missing target mount: $target" >&2
     exit 1

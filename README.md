@@ -1,12 +1,12 @@
 # jbofs
 
-`jbofs` is a "just bunch of file systems" layout for storing files explicitly on multiple independent XFS-backed NVMe disks while presenting a separate logical namespace of symlinks.
+`jbofs` is a "just bunch of file systems" layout for storing files explicitly on multiple independent XFS-backed filesystems while presenting a separate logical namespace of symlinks.
 
 At a glance:
 
-- physical files live under `/data/nvme/<stable-id>/...`
-- friendly aliases exist under `/data/nvme/0..N`
-- logical symlinks live under `/data/logical/...`
+- physical files live under `/srv/jbofs/raw/<stable-id>/...`
+- friendly aliases exist under `/srv/jbofs/aliased/disk-N`
+- logical symlinks live under `/srv/jbofs/logical/...`
 
 The command surface is:
 

@@ -10,9 +10,9 @@ Defaults:
   --ensure-data --rm-both
 
 Environment:
-  DATA_ROOT     default: /data
-  LOGICAL_ROOT  default: /data/logical
-  NVME_ROOT     default: /data/nvme
+  RAW_ROOT      default: /srv/jbofs/raw
+  ALIASED_ROOT  default: /srv/jbofs/aliased
+  LOGICAL_ROOT  default: /srv/jbofs/logical
 EOF
 }
 
@@ -29,9 +29,9 @@ print(os.path.abspath(os.path.normpath(sys.argv[1])))
 PY
 }
 
-DATA_ROOT="${DATA_ROOT:-/data}"
-LOGICAL_ROOT="${LOGICAL_ROOT:-$DATA_ROOT/logical}"
-NVME_ROOT="${NVME_ROOT:-$DATA_ROOT/nvme}"
+RAW_ROOT="${RAW_ROOT:-/srv/jbofs/raw}"
+ALIASED_ROOT="${ALIASED_ROOT:-/srv/jbofs/aliased}"
+LOGICAL_ROOT="${LOGICAL_ROOT:-/srv/jbofs/logical}"
 ENSURE_MODE="data"
 ENSURE_COUNT=0
 REMOVE_MODE="both"
@@ -111,9 +111,9 @@ fi
 
 INPUT_PATH="$1"
 INPUT_ABS="$(normalize_lex "$INPUT_PATH")"
-DATA_ROOT_ABS="$(normalize_lex "$DATA_ROOT")"
 LOGICAL_ROOT_ABS="$(normalize_lex "$LOGICAL_ROOT")"
-NVME_ROOT_ABS="$(normalize_lex "$NVME_ROOT")"
+RAW_ROOT_ABS="$(normalize_lex "$RAW_ROOT")"
+ALIASED_ROOT_ABS="$(normalize_lex "$ALIASED_ROOT")"
 
 under_root() {
   local path="$1"
@@ -131,16 +131,14 @@ remove_file() {
   rm -f -- "$path"
 }
 
-if ! under_root "$INPUT_ABS" "$DATA_ROOT_ABS"; then
-  fail "path must be under $DATA_ROOT_ABS"
-fi
-
 case "$ENSURE_MODE" in
   logical)
     under_root "$INPUT_ABS" "$LOGICAL_ROOT_ABS" || fail "path must be under $LOGICAL_ROOT_ABS"
     ;;
   physical)
-    under_root "$INPUT_ABS" "$NVME_ROOT_ABS" || fail "path must be under $NVME_ROOT_ABS"
+    if ! under_root "$INPUT_ABS" "$RAW_ROOT_ABS" && ! under_root "$INPUT_ABS" "$ALIASED_ROOT_ABS"; then
+      fail "path must be under $RAW_ROOT_ABS or $ALIASED_ROOT_ABS"
+    fi
     ;;
   data)
     ;;
@@ -168,7 +166,7 @@ if under_root "$INPUT_ABS" "$LOGICAL_ROOT_ABS"; then
       target="$(readlink -f -- "$link_path" || true)"
       [[ -n "$target" ]] || continue
       target_norm="$(normalize_lex "$target")"
-      under_root "$target_norm" "$NVME_ROOT_ABS" || fail "logical symlink target must be under $NVME_ROOT_ABS"
+      under_root "$target_norm" "$RAW_ROOT_ABS" || fail "logical symlink target must be under $RAW_ROOT_ABS"
       PHYSICAL_PATHS+=("$target_norm")
     done < <(find "$INPUT_ABS" -type l | sort)
   else
@@ -177,13 +175,13 @@ if under_root "$INPUT_ABS" "$LOGICAL_ROOT_ABS"; then
     PHYSICAL_PATH="$(readlink -f -- "$INPUT_ABS" || true)"
     [[ -n "$PHYSICAL_PATH" ]] || fail "unable to resolve symlink target: $INPUT_ABS"
     PHYSICAL_PATH="$(normalize_lex "$PHYSICAL_PATH")"
-    under_root "$PHYSICAL_PATH" "$NVME_ROOT_ABS" || fail "logical symlink target must be under $NVME_ROOT_ABS"
+    under_root "$PHYSICAL_PATH" "$RAW_ROOT_ABS" || fail "logical symlink target must be under $RAW_ROOT_ABS"
     PHYSICAL_PATHS+=("$PHYSICAL_PATH")
   fi
-elif under_root "$INPUT_ABS" "$NVME_ROOT_ABS"; then
+elif under_root "$INPUT_ABS" "$RAW_ROOT_ABS" || under_root "$INPUT_ABS" "$ALIASED_ROOT_ABS"; then
   if [[ "$RECURSIVE" -eq 1 && -d "$INPUT_ABS" ]]; then
     while IFS= read -r physical_file; do
-      PHYSICAL_PATHS+=("$(normalize_lex "$physical_file")")
+      PHYSICAL_PATHS+=("$(readlink -f -- "$physical_file")")
     done < <(find "$INPUT_ABS" -type f | sort)
   else
     if [[ -L "$INPUT_ABS" ]]; then
@@ -198,7 +196,7 @@ elif under_root "$INPUT_ABS" "$NVME_ROOT_ABS"; then
     collect_matching_links "$physical"
   done
 else
-  fail "path must be under logical or physical nvme roots"
+  fail "path must be under logical, raw, or aliased roots"
 fi
 
 declare -A SEEN_LOGICAL=()

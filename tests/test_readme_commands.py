@@ -4,8 +4,9 @@ from pathlib import Path
 def test_readme_includes_required_commands():
     text = Path("README.md").read_text(encoding="utf-8")
     required = [
-        "/data/nvme/0",
-        "/data/logical",
+        "/srv/jbofs/raw/<stable-id>",
+        "/srv/jbofs/aliased/disk-N",
+        "/srv/jbofs/logical",
         "scripts/jbofs-cp.sh",
         "scripts/jbofs-rm.sh",
         "scripts/jbofs-sync.sh",

@@ -51,7 +51,7 @@ def render_plan_shell(approved: list[dict[str, Any]]) -> tuple[str, str]:
     for d in approved:
         dev = d["path"]
         sid = d["stable_id"]
-        mnt = f"/data/nvme/{sid}"
+        mnt = f"/srv/jbofs/raw/{sid}"
         label = _label_for(sid)
         lines.extend(
             [
