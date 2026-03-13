@@ -13,6 +13,8 @@ def test_readme_includes_required_commands():
         "bash scripts/setup/07_aliases.sh",
         "scripts/jbofs-cp.sh --disk=2",
         "scripts/jbofs-rm.sh",
+        "scripts/jbofs-sync.sh",
+        "scripts/jbofs-prune.sh",
         "/data/nvme/0",
         "/data/logical",
         "pcaps/symbol=ES/date=2026-03-11/file1.pcap",
@@ -22,6 +24,8 @@ def test_readme_includes_required_commands():
         "--batch",
         "srcdir/ means copy the contents",
         "bash scripts/jbofs-rm.sh -r",
+        "bash scripts/jbofs-sync.sh --disk=1",
+        "bash scripts/jbofs-prune.sh --logical-prefix",
     ]
     for cmd in required:
         assert cmd in text

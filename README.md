@@ -147,6 +147,59 @@ bash scripts/jbofs-rm.sh --ensure-physical --rm-both /data/nvme/0/pcaps/symbol=E
 bash scripts/jbofs-rm.sh -r --ensure-logical /data/logical/pcaps/2026-03-11
 ```
 
+### `scripts/jbofs-sync.sh`
+
+Adds missing logical symlinks for files that already exist on jbofs disks. This command is additive only; stale symlink removal will live in a separate prune command.
+
+Usage:
+
+```bash
+bash scripts/jbofs-sync.sh [--disk=N | --disk-path PATH] [--logical-prefix RELPATH] [--dry-run]
+```
+
+Rules:
+
+- With no scope flags, sync scans all stable physical mount roots under `/data/nvme`.
+- `--disk=N` syncs only one numeric alias such as `/data/nvme/1`.
+- `--disk-path PATH` syncs only one physical subtree, which may be given through a numeric alias or a stable mount path.
+- `--logical-prefix RELPATH` filters synced files by logical relative path such as `pcaps/2026-03-12`.
+- Existing correct symlinks are left untouched.
+- Conflicting logical paths are reported and skipped.
+
+Examples:
+
+```bash
+bash scripts/jbofs-sync.sh
+bash scripts/jbofs-sync.sh --disk=1
+bash scripts/jbofs-sync.sh --disk-path /data/nvme/0/pcaps --logical-prefix pcaps/2026-03-12
+bash scripts/jbofs-sync.sh --dry-run
+```
+
+### `scripts/jbofs-prune.sh`
+
+Removes broken logical symlinks under `/data/logical`. This is the destructive counterpart to additive `jbofs-sync`; it does not delete physical files.
+
+Usage:
+
+```bash
+bash scripts/jbofs-prune.sh [--logical-prefix RELPATH] [--dry-run]
+```
+
+Rules:
+
+- Prune only examines symlinks under `/data/logical`.
+- Valid symlinks are left untouched.
+- Regular files are ignored.
+- `--logical-prefix RELPATH` scopes pruning to one logical subtree.
+
+Examples:
+
+```bash
+bash scripts/jbofs-prune.sh
+bash scripts/jbofs-prune.sh --logical-prefix pcaps/2026-03-12
+bash scripts/jbofs-prune.sh --dry-run
+```
+
 ## End-to-end workflow
 
 1. Inventory hardware and current mounts.
