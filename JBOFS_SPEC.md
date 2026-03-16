@@ -4,8 +4,8 @@
 
 `jbofs` should return to a very small core:
 
-1. Persist a mapping from logical namespace to a set of backing filesystems.
-2. Copy file data into one selected backing filesystem.
+1. Persist a mapping from logical namespace to a set of backing physical roots.
+2. Copy file data into one selected physical root.
 3. Maintain logical symlinks that point at the real file locations.
 4. Provide a small set of repair and cleanup commands.
 
@@ -75,19 +75,19 @@ Nothing else is required by the base product.
 
 ### Concepts
 
-- `physical filesystem`: one mounted backing filesystem
-- `physical file`: the real bytes stored on one backing filesystem
+- `physical root`: one configured backing root for real file storage (conceptually, a filesystem mountpoint, but could be subdir)
+- `physical file`: the real bytes stored under one physical root
 - `logical path`: the user-facing path under a logical root
 - `logical symlink`: a symlink under the logical root pointing at the physical file
 
 ### Invariants
 
 1. Every managed logical file is represented by exactly one symlink under the logical root.
-2. Every managed symlink points at exactly one physical file under one configured filesystem root.
+2. Every managed symlink points at exactly one physical file under one configured physical root.
 3. `cp` creates a physical file first, then creates the logical symlink.
 4. `rm` removes both the symlink and the physical file for one logical path.
 5. `prune` removes logical symlinks whose targets no longer exist.
-6. `sync` recreates missing logical symlinks for physical files already present on configured filesystems.
+6. `sync` recreates missing logical symlinks for physical files already present under configured physical roots.
 
 ### Non-goals
 
@@ -120,14 +120,14 @@ JSON is easy to parse in Zig, explicit, and avoids ambient shell state.
 {
   "version": 1,
   "logical_root": "/srv/jbofs/logical",
-  "filesystems": [
+  "roots": [
     {
-      "root": "/srv/jbofs/raw/nvme-S5P2NG0R607870N",
+      "root_path": "/srv/jbofs/raw/nvme-S5P2NG0R607870N",
       "alias": "/srv/jbofs/aliases/disk-0",
       "shortname": "disk-0"
     },
     {
-      "root": "/srv/jbofs/raw/nvme-S5P2NG0R608243B",
+      "root_path": "/srv/jbofs/raw/nvme-S5P2NG0R608243B",
       "alias": "/srv/jbofs/aliases/disk-1",
       "shortname": "disk-1"
     }
@@ -142,19 +142,19 @@ JSON is easy to parse in Zig, explicit, and avoids ambient shell state.
 
 1. `version` is required and currently must equal `1`.
 2. `logical_root` is required and absolute.
-3. `filesystems` is required and non-empty.
-4. Each filesystem entry has:
-   - `name`: stable CLI name such as `disk-0`
-   - `root`: absolute path to the mounted filesystem root
-5. Filesystem names must be unique.
-6. Filesystem roots must be unique.
+3. `roots` is required and non-empty.
+4. Each root entry has:
+   - `shortname`: stable CLI name such as `disk-0`
+   - `root_path`: absolute path to the configured physical root
+5. Root shortnames must be unique.
+6. Root paths must be unique.
 7. `placement.default_policy` is optional; default is `most-free`.
 
 ### Why not `.env`
 
 A `.env` file is workable but weaker:
 
-- no natural structure for multiple filesystem entries
+- no natural structure for multiple physical root entries
 - easier to drift into partially defined state
 - harder to validate cleanly
 
@@ -167,7 +167,7 @@ For a logical relative path `photos/2024/img001.jpg`:
 - logical symlink path:
   - `<logical_root>/photos/2024/img001.jpg`
 - physical file path on `disk-1`:
-  - `<filesystems["disk-1"].root>/photos/2024/img001.jpg`
+  - `<roots["disk-1"].root_path>/photos/2024/img001.jpg`
 
 This simple "same relative path under both roots" mapping should be the only mapping rule in the cleanroom implementation.
 
@@ -203,8 +203,8 @@ jbofs init [--config PATH] [--force]
 5. ask the user interactively how they want jbofs setup:
   1. logical dir (default /srv/jbofs/logical)
   2. fs alias dir (default /srv/jbofs/aliases)
-  3. add a filesystem? while true (at least once, else print error and retry):
-    1. ask for mount point
+  3. add a physical root? while true (at least once, else print error and retry):
+    1. ask for root path
     2. ask for alias (default /src/jbofs/aliases/disk-<N>)
     3. ask for shortname (default disk-<N>)
   4. ask for placement policy (`most-free|random`) (default `most-free`)
@@ -218,8 +218,8 @@ The inital file should be well-formed, something like
 {
   "version": 1,
   "logical_root": "/srv/jbofs/logical",
-  "filesystems": [
-   { "root": "...", "alias": "...", "shortname": "..." }
+  "roots": [
+   { "root_path": "...", "alias": "...", "shortname": "..." }
   ],
   "placement": {
     "default_policy": "most-free"
@@ -233,7 +233,7 @@ The inital file should be well-formed, something like
 
 ### Purpose
 
-Copy one regular file into one selected filesystem and create its logical symlink.
+Copy one regular file into one selected physical root and create its logical symlink.
 
 ### Form
 
@@ -244,9 +244,9 @@ jbofs cp [--disk SHORTNAME | --policy POLICY] SOURCE LOGICAL_PATH
 ### Supported options
 
 - `--disk SHORTNAME` (optional)
-  - choose an explicit filesystem by configured `shortname`
+  - choose an explicit physical root by configured `shortname`
 - `--policy POLICY` (optional, default value based on config)
-  - choose a filesystem by policy
+  - choose a physical root by policy
   - initially support:
     - `most-free`
     - `first`
@@ -276,9 +276,9 @@ Instead, cp should overwrite contents by default.
 
 1. Load config.
 2. Validate `SOURCE` is filetype we can "read()" from (eg; regular file, pipefd)
-3. Resolve the target filesystem.
+3. Resolve the target physical root.
 4. Compute:
-   - physical destination: `<filesystem.root>/<LOGICAL_PATH>`
+   - physical destination: `<root.root_path>/<LOGICAL_PATH>`
    - logical destination: `<logical_root>/<LOGICAL_PATH>`
 5. Refuse to proceed if either destination already exists.
 6. Create parent directories as needed.
@@ -289,9 +289,9 @@ Instead, cp should overwrite contents by default.
 ### Selection policy
 
 - `first`
-  - choose the first filesystem entry in config order
+  - choose the first root entry in config order
 - `most-free`
-  - stat each filesystem root and choose the one with the most available space
+  - stat each physical root and choose the one with the most available space
 
 If neither `--disk` nor `--policy` is provided, use `placement.default_policy` from config.
 
@@ -327,7 +327,7 @@ jbofs rm [LOGICAL_PATH]
 1. Normalize `LOGICAL_PATH` to a path under `logical_root`.
 2. Require that the resolved logical path is a symlink.
 3. Read the symlink target.
-4. Require that the symlink target is under one of the configured filesystem roots.
+4. Require that the symlink target is under one of the configured physical roots.
 5. Delete the physical file.
 6. Delete the logical symlink.
 7. Succeed if both are gone.
@@ -373,7 +373,7 @@ None.
 
 ### Purpose
 
-Recreate missing logical symlinks for physical files already present on configured filesystems.
+Recreate missing logical symlinks for physical files already present under configured physical roots.
 
 ### Form
 
@@ -387,9 +387,9 @@ None.
 
 ### Behavior
 
-1. For each configured filesystem root:
+1. For each configured physical root:
    - walk regular files recursively
-2. Derive the relative path from that filesystem root.
+2. Derive the relative path from that physical root.
 3. Compute the expected logical symlink path as:
    - `<logical_root>/<relative_path>`
 4. If the logical path is absent:
@@ -407,12 +407,12 @@ None.
 ```
 - `PHYSICAL_PREFIX`
   - optional path to some physical subtree such as `/srv/jbofs/disk-1/photos/2024`
-  - if omitted, scan all configured filesystems
+  - if omitted, scan all configured physical roots
 ```
 1. No `--disk-path`.
 2. No stable-root mapping logic.
 3. No dependency on alias directories.
-4. Configured filesystem roots are the only scan roots.
+4. Configured physical roots are the only scan roots.
 
 ## Operator Examples
 
@@ -481,7 +481,7 @@ For each file found, recreate the symlink under the logical root using the same 
 
 1. treat paths are ordinary linux commands do (ie: accept realtive paths or aboslute paths).
 2. Canonicalize paths to find roots/prefix/suffixes.
-3. Reject symlink targets outside configured filesystem roots.
+3. Reject symlink targets outside configured physical roots.
 4. Only manage regular files and symlinks.
 
 ## Error model
@@ -489,9 +489,9 @@ For each file found, recreate the symlink under the logical root using the same 
 Each command should fail with a short, precise error message and a non-zero exit code when:
 
 - config is missing or invalid
-- no filesystems are configured
-- selected filesystem name is unknown
-- policy selection cannot choose a filesystem
+- no roots are configured
+- selected root name is unknown
+- policy selection cannot choose a root
 - source path is missing or not a regular file
 - logical path is invalid
 - destination already exists
@@ -529,7 +529,7 @@ The clean rewrite should optimize for obviousness:
 
 - one config file
 - one logical root
-- a list of filesystem roots
+- a list of physical roots
 - one relative-path mapping rule
 - four maintenance verbs plus `init`
 
