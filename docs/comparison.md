@@ -36,10 +36,11 @@ The main semantic questions are:
 
 `jbofs` is a small operational model rather than a new filesystem:
 
-- one filesystem per disk
-- direct physical storage under `/srv/jbofs/raw/<stable-id>` or `/srv/jbofs/aliased/disk-N`
-- logical symlink namespace under `/srv/jbofs/logical`
-- explicit write, remove, sync, and prune commands
+- a config-driven set of independent physical roots
+- direct physical storage under configured `root_path` values such as `/srv/jbofs/raw/disk-a`
+- optional alias paths such as `/srv/jbofs/aliases/disk-0`, stored in config for operator clarity and future tooling
+- a separate logical symlink namespace under a configured `logical_root`, commonly `/srv/jbofs/logical`
+- explicit `init`, `cp`, `rm`, `sync`, and `prune` commands
 
 ### What it does well
 
@@ -49,6 +50,7 @@ The main semantic questions are:
 - No FUSE layer
 - No hidden balancing or migration
 - Easy to reason about for large immutable or append-mostly files
+- Clear additive vs destructive repair split: `sync` creates missing symlinks, `prune` removes dead ones
 
 ### What it does poorly
 
@@ -57,6 +59,7 @@ The main semantic questions are:
 - No integrated checksums or self-healing
 - No snapshots or replication
 - More operational discipline required than a single logical filesystem
+- Current implementation is intentionally narrow: no recursive copy/remove, no dry-run mode, no subtree-scoped sync/prune
 
 ### Best fit
 
@@ -82,7 +85,7 @@ Source: <https://trapexit.github.io/mergerfs/latest/>
 ### Important semantics differences vs `jbofs`
 
 - `mergerfs` gives you a pooled namespace as the primary interface; `jbofs` gives you explicit physical paths plus a separate symlink namespace.
-- `mergerfs` must make policy choices at create/rename/link time; `jbofs` makes you choose placement explicitly or via a helper policy at command invocation.
+- `mergerfs` must make policy choices at create/rename/link time; `jbofs` makes you choose placement explicitly or via the configured `first` / `most-free` policy at command invocation.
 - `mergerfs` can return `EXDEV` for rename/link operations under path-preserving policies when the target path does not exist on the required branch. Source: <https://trapexit.github.io/mergerfs/latest/faq/why_isnt_it_working/>
 - `jbofs` has no union-filesystem rename semantics because it is not a union mount.
 
@@ -159,7 +162,7 @@ Source: <https://www.gnu.org/software/stow/manual/>
 
 - Stow is optimized for package-tree installation and removal, not per-file runtime placement.
 - Stow can fold and unfold directory trees to minimize symlink count; `jbofs` intentionally keeps the logical namespace
-  as direct file symlinks created from actual physical content.
+  as direct file symlinks created from actual physical content discovered or written under configured roots.
 - `jbofs sync`/`jbofs prune` are file-storage repair tools; Stow is package-tree management.
 
 ### Where GNU Stow is better
@@ -196,7 +199,7 @@ Sources:
 
 ### Important semantics differences vs `jbofs`
 
-- `md`/dm-raid operate below the filesystem. `jbofs` operates above independent filesystems.
+- `md`/dm-raid operate below the filesystem. `jbofs` operates above independent configured filesystems.
 - In RAID0/striped modes, a file’s blocks may live across many disks.
 - In mirrored/parity modes, recovery and integrity are tied to the RAID layer, not to explicit per-file placement.
 - A single logical mount is natural with RAID; `jbofs` intentionally does not do block aggregation.
@@ -240,7 +243,7 @@ Sources:
 
 - LVM solves capacity management and snapshot/thin-provisioning problems, not logical path presentation.
 - LVM snapshots and thin pools are fundamentally block-layer features.
-- `jbofs` gives namespace indirection; LVM gives block-level indirection.
+- `jbofs` gives namespace indirection over configured roots; LVM gives block-level indirection.
 
 ### Where LVM is better
 
@@ -278,7 +281,7 @@ OpenZFS documents storage pools (`zpool`), virtual devices (vdevs), end-to-end c
 - ZFS is a complete storage stack, not just a namespace/placement model.
 - ZFS dynamically stripes across top-level vdevs.
 - Redundancy and integrity are native concerns in ZFS.
-- The pool is the primary object; in `jbofs`, independent filesystems are primary.
+- The pool is the primary object; in `jbofs`, independent configured filesystems are primary.
 - ZFS datasets share pool space instead of being isolated by disk unless deliberately designed that way.
 
 ### Where ZFS is better
@@ -414,6 +417,7 @@ You can build ad hoc symlink or bind-mount trees without `jbofs`.
 - explicit helper commands for copy/remove/repair
 - consistent logical vs physical path model
 - additive sync and destructive prune split
+- validation that `rm` only removes symlinks whose targets stay inside configured managed roots
 - tests and docs around edge cases
 
 ### Bottom line

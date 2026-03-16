@@ -1,144 +1,102 @@
 # Developer Guide
 
-This guide captures the operational assumptions, edge cases, and local development workflow for `jbofs`.
+This guide covers local development for the current Zig implementation.
 
-## Ubuntu Packages
+## Toolchain
 
-On Ubuntu 24.04, install the tools used by the setup scripts and tests:
+The repository currently targets:
 
-```bash
-sudo apt update
-sudo apt install -y python3 python3-pytest python3-yaml xfsprogs fio util-linux nvme-cli
-```
+- Zig `0.15.2`
+- `zig-clap` `0.11.0`
+- libc, because `src/commands/init.zig` uses `getline(3)` and `src/lib/cp.zig` uses `statvfs(3)`
 
-Notes:
+## Build and Test
 
-- `python3-yaml` is required by `scripts/setup/lib_plan.py`.
-- `xfsprogs` provides `mkfs.xfs`.
-- `fio` is only needed for benchmark runs, not for normal tests.
-- `util-linux` provides `lsblk`, `findmnt`, `blkid`, and `wipefs`.
-- `nvme-cli` is useful for hardware bring-up and validation.
-
-## Running Tests
-
-Run the full suite from the repo root:
+Build:
 
 ```bash
-pytest
+zig build
 ```
 
-Run one file:
+Run tests:
 
 ```bash
-pytest tests/test_jbofs_sync.py -q
+zig build test
 ```
 
-Test collection depends on [tests/conftest.py](/home/fozga/r/art/nvme/tests/conftest.py), which inserts the repo root into `sys.path` so imports from `scripts.setup` work under plain `pytest`.
-
-## Script Layout
-
-Setup/provisioning scripts live under `scripts/setup/`:
-
-- inventory, planning, apply, verify, fio, report, aliases
-- setup-only libraries in `scripts/setup/lib_inventory.py` and `scripts/setup/lib_plan.py`
-
-Operational `jbofs` helpers stay at `scripts/`:
-
-- `jbofs cp`
-- `jbofs rm`
-- `jbofs sync`
-- `jbofs prune`
-
-## Namespace Model
-
-- Physical data lives on XFS filesystems mounted under `/srv/jbofs/raw/<stable-id>`.
-- Friendly aliases `/srv/jbofs/aliased/disk-N` are created by `scripts/setup/07_aliases.sh`.
-- Logical symlinks live under `/srv/jbofs/logical`.
-
-The alias script must run before helpers that rely on numeric disk aliases.
-
-## Helper Responsibilities
-
-`jbofs cp`
-
-- Copies files into physical storage and creates logical symlinks.
-- Recursive mode uses rsync-style semantics:
-  - `srcdir/` copies contents
-  - `srcdir` copies the directory itself
-- Recursive copy requires exactly one of `--round-robin` or `--batch`.
-
-`jbofs rm`
-
-- Removes logical symlinks, physical data, or both.
-- Accepts logical paths, stable physical paths, and numeric alias paths.
-- Recursive remove traverses directories under either logical or physical roots.
-
-`jbofs sync`
-
-- Additive only.
-- Creates missing logical symlinks for physical files that already exist.
-- Can scan all stable roots, one numeric disk, or one physical subtree.
-- Conflicting logical paths are reported and skipped.
-
-`jbofs prune`
-
-- Removes broken logical symlinks only.
-- Never deletes physical data.
-- Intended as the destructive counterpart to additive `jbofs sync`.
-
-## Edge Cases Already Handled
-
-### Stale `/etc/fstab` comments can misclassify disks
-
-The inventory classifier originally treated installer comments like:
-
-```text
-# / was on /dev/nvme0n1p3 during installation
-```
-
-as active `fstab` references. The parser now ignores comments and only matches active entries.
-
-### XFS labels must be unique
-
-Truncating similar Samsung serial numbers produced duplicate labels in generated `mkfs.xfs` commands. Setup plan generation now derives unique labels from the tail of the stable device ID.
-
-### Fresh XFS mountpoints are root-owned
-
-After formatting and mounting, write probes can fail with `EACCES` for non-root users. This is expected until ownership or permissions are adjusted, for example with `chown`.
-
-### `pytest` and direct Python execution behave differently
-
-Direct `python3` execution from the repo root could import `scripts.setup`, but plain `pytest` collection initially could not. `tests/conftest.py` normalizes import behavior.
-
-### Recursive copy semantics are subtle
-
-Recursive `jbofs cp` intentionally follows rsync-style source semantics because they are less surprising than ad hoc rules:
-
-- trailing slash means copy contents
-- no trailing slash means copy the directory itself
-
-### Physical paths may have multiple logical symlinks
-
-`jbofs rm` removes all matching logical symlinks when invoked from a physical file path. This avoids ambiguous partial cleanup.
-
-### Sync and prune are intentionally separate
-
-- `jbofs sync` never deletes
-- `jbofs prune` only removes broken logical symlinks
-
-This separation reduces the chance of accidental destructive repair actions.
-
-## Typical Developer Workflow
-
-1. Update or add tests.
-2. Run `pytest`.
-3. Update docs if CLI/help text changed.
-4. Re-run `pytest`.
-
-For storage bring-up changes, also validate generated artifacts manually:
+Run the CLI:
 
 ```bash
-python3 scripts/setup/01_inventory.py --output-dir artifacts
-python3 scripts/setup/02_plan.py --inventory artifacts/inventory.json --selected config/selected-devices.yaml --protected config/protected-devices.yaml --output-dir artifacts
-sed -n '1,200p' artifacts/setup-plan.md
+zig build run -- --help
+zig build run -- cp --help
 ```
+
+## Repository Layout
+
+- [src/main.zig](/home/fozga/r/art/jbofs2/src/main.zig): entrypoint and command dispatch
+- [src/cli.zig](/home/fozga/r/art/jbofs2/src/cli.zig): CLI parsing and help text
+- [src/config.zig](/home/fozga/r/art/jbofs2/src/config.zig): config schema, validation, loading, path resolution
+- [src/pathing.zig](/home/fozga/r/art/jbofs2/src/pathing.zig): logical-path normalization and root checks
+- [src/commands/](/home/fozga/r/art/jbofs2/src/commands): command entrypoints
+- [src/lib/](/home/fozga/r/art/jbofs2/src/lib): operational logic and tests
+
+## Command Responsibilities
+
+`init`
+
+- prompts for config values
+- builds a validated in-memory config
+- writes JSON to the resolved config path
+
+`cp`
+
+- resolves the logical destination path
+- selects a root by explicit shortname or placement policy
+- copies file contents
+- creates the logical symlink
+
+`rm`
+
+- only accepts logical paths
+- resolves and validates the symlink target
+- removes the physical file if present
+- removes the logical symlink
+
+`sync`
+
+- walks every configured `root_path`
+- recreates missing logical symlinks
+- reports created, unchanged, and conflicting entries
+
+`prune`
+
+- walks `logical_root`
+- removes symlinks whose targets no longer exist
+
+## Important Current Semantics
+
+- `alias` paths are stored in config but are not consulted by the current operational commands
+- `sync` and `prune` have no subtree filtering
+- `rm` is logical-path only
+- `cp` supports regular files and named pipes, not directories
+- logical paths are normalized and must stay under `logical_root`
+
+## Testing Style
+
+Most behavior is tested at the library layer with temporary directories. The tests exercise:
+
+- config validation and config-path precedence
+- path normalization and root containment
+- explicit-root and policy-based placement
+- sync conflict behavior
+- prune dead-link behavior
+- remove semantics when data is already missing
+
+When changing CLI semantics, update:
+
+- command parsing in [src/cli.zig](/home/fozga/r/art/jbofs2/src/cli.zig)
+- command wrappers in [src/commands/](/home/fozga/r/art/jbofs2/src/commands)
+- corresponding library behavior and tests in [src/lib/](/home/fozga/r/art/jbofs2/src/lib)
+- user-facing docs in [docs/](/home/fozga/r/art/jbofs2/docs)
+
+Open future work is tracked in [roadmap.md](/home/fozga/r/art/jbofs2/docs/roadmap.md).

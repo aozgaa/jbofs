@@ -1,26 +1,33 @@
 # jbofs
 
-`jbofs` is a "just bunch of file systems" layout for storing files explicitly on multiple independent roots (~= filesystems) while presenting a separate logical namespace of symlinks.
+`jbofs` is a small CLI for managing files across multiple independent filesystem roots while exposing a separate logical namespace of symlinks.
 
 At a glance:
 
-- physical files live under user-initialized roots.
-- friendly aliases exist under `/srv/jbofs/aliased/disk-N`
-- logical symlinks live under `/srv/jbofs/logical/...`
+- physical files live under configured roots such as `/srv/jbofs/raw/disk-a`
+- optional aliases such as `/srv/jbofs/aliases/disk-0` point at those roots
+- logical symlinks live under a separate tree such as `/srv/jbofs/logical`
+- writes are explicit: `jbofs` copies data to one root, then creates one logical symlink
 
-The command surface is:
+Current commands:
 
+- `jbofs init`
 - `jbofs cp`
 - `jbofs rm`
 - `jbofs sync`
 - `jbofs prune`
 
+`jbofs` is configured with a JSON file. By default it is loaded from:
+
+- `$JBOFS_CONFIG_PATH`, if set
+- `$XDG_CONFIG_HOME/jbofs/fs_config.json`, if set
+- `~/.config/jbofs/fs_config.json` otherwise
+
 Read next:
 
 - [docs/design.md](./docs/design.md)
-- [docs/comparison.md](./docs/comparison.md)
 - [docs/setup-guide.md](./docs/setup-guide.md)
 - [docs/user-guide.md](./docs/user-guide.md)
-- [docs/benchmarking.md](./docs/benchmarking.md)
+- [docs/comparison.md](./docs/comparison.md)
 - [docs/developer-guide.md](./docs/developer-guide.md)
-- [docs/agent-handoff.md](./docs/agent-handoff.md)
+- [docs/roadmap.md](./docs/roadmap.md)

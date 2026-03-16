@@ -1,109 +1,123 @@
 # Setup Guide
 
-This guide covers the one-time storage bring-up flow for `jbofs`.
-
-After setup is complete, proceed to:
-
-- [User Guide](/home/fozga/r/art/nvme/docs/user-guide.md) for day-to-day file operations
-- [Benchmarking](/home/fozga/r/art/nvme/docs/benchmarking.md) for fio runs and performance reports
+This guide covers setting up the current `jbofs` CLI. In this repository, setup means creating directories and writing a valid config file. Disk provisioning, formatting, mounting, and alias creation are outside the scope of the tool.
 
 ## Prerequisites
 
-- The target storage devices are physically visible to Linux.
-- The system/root disk is known and will be protected.
-- Required packages are installed.
+Before using `jbofs`, prepare the filesystem layout yourself:
 
-See [Developer Guide](/home/fozga/r/art/nvme/docs/developer-guide.md) for Ubuntu package installation.
+- create or mount one or more physical roots
+- choose a logical root directory
+- optionally create alias symlinks for operator convenience
 
-## 1. Inventory Disks
+Example layout:
 
-Generate the current inventory:
-
-```bash
-python3 scripts/setup/01_inventory.py --output-dir artifacts
-sed -n '1,200p' artifacts/inventory.md
+```text
+/srv/jbofs/raw/disk-a
+/srv/jbofs/raw/disk-b
+/srv/jbofs/aliases/disk-0 -> /srv/jbofs/raw/disk-a
+/srv/jbofs/aliases/disk-1 -> /srv/jbofs/raw/disk-b
+/srv/jbofs/logical
 ```
 
-Review:
+## 1. Install Zig and Build `jbofs`
 
-- which disk is the OS/root disk
-- which disks are blank target devices
-- whether any disk is unexpectedly classified as `CAUTION` or `BLOCKED`
+From the repo root:
 
-## 2. Protect the Wrong Disks and Select the Right Ones
+```bash
+zig build
+```
 
-Edit:
+To run without installing:
 
-- `config/protected-devices.yaml`
-- `config/selected-devices.yaml`
+```bash
+zig build run -- --help
+```
+
+## 2. Create the Config Interactively
+
+Run:
+
+```bash
+zig build run -- init
+```
+
+The interactive prompts ask for:
+
+- `logical dir`
+- `root alias dir`
+- one or more physical roots
+- each root's alias path
+- each root's shortname
+- default placement policy
+
+By default the config is written to `~/.config/jbofs/fs_config.json`. You can override that with either:
+
+- `zig build run -- -c /path/to/fs_config.json init`
+- `JBOFS_CONFIG_PATH=/path/to/fs_config.json zig build run -- init`
+
+Use `-f` to overwrite an existing config:
+
+```bash
+zig build run -- init -f
+```
+
+## 3. Verify the Generated Config
+
+The config schema is:
+
+```json
+{
+  "version": 1,
+  "logical_root": "/srv/jbofs/logical",
+  "roots": [
+    {
+      "root_path": "/srv/jbofs/raw/disk-a",
+      "alias": "/srv/jbofs/aliases/disk-0",
+      "shortname": "disk-0"
+    },
+    {
+      "root_path": "/srv/jbofs/raw/disk-b",
+      "alias": "/srv/jbofs/aliases/disk-1",
+      "shortname": "disk-1"
+    }
+  ],
+  "placement": {
+    "default_policy": "most-free"
+  }
+}
+```
+
+Current validation rules:
+
+- `version` must be `1`
+- `logical_root` must be absolute
+- every `root_path` must be absolute
+- every `alias` must be absolute
+- at least one root is required
+- `shortname` values must be non-empty and unique
+- `root_path` values must be unique
+
+`jbofs` does not create the alias symlinks for you. The paths in `alias` are currently descriptive metadata for operator clarity and future tooling; the current commands read and write through `root_path`.
+
+## 4. Create the Logical Root if Needed
+
+`jbofs sync` and `jbofs cp` create intermediate subdirectories as needed, but the top-level physical and logical roots should already exist and be writable by the user running the command.
 
 Example:
 
-```yaml
-# config/protected-devices.yaml
-protected_devices:
-  - nvme-ROOT_DISK_SERIAL
-```
-
-```yaml
-# config/selected-devices.yaml
-selected_devices:
-  - nvme-DATA_DISK_A
-  - nvme-DATA_DISK_B
-  - nvme-DATA_DISK_C
-  - nvme-DATA_DISK_D
-```
-
-## 3. Generate the Guarded Setup Plan
-
 ```bash
-python3 scripts/setup/02_plan.py \
-  --inventory artifacts/inventory.json \
-  --selected config/selected-devices.yaml \
-  --protected config/protected-devices.yaml \
-  --output-dir artifacts
-sed -n '1,200p' artifacts/setup-plan.md
+sudo mkdir -p /srv/jbofs
+sudo chown -R $(id -nu):$(id -nu) /srv/jbofs
+mkdir -p /srv/jbofs/raw/disk-a /srv/jbofs/raw/disk-b /srv/jbofs/logical
+ln -sfn /srv/jbofs/raw/disk-a /srv/jbofs/aliases/disk-0
+ln -sfn /srv/jbofs/raw/disk-b /srv/jbofs/aliases/disk-1
 ```
 
-Review the plan carefully before applying it.
+## 5. Continue With Normal Usage
 
-## 4. Apply the Filesystem Setup
+Once the config exists, use:
 
-Use the confirmation token emitted by the plan step:
-
-```bash
-bash scripts/setup/03_apply.sh --plan artifacts/setup-plan.sh --apply --confirm <token>
-```
-
-This formats the selected disks with XFS, mounts them, and appends `fstab` entries.
-
-## 5. Verify Mounts
-
-```bash
-python3 scripts/setup/04_verify.py --mount-root /srv/jbofs/raw --probe-write --output-dir artifacts
-sed -n '1,200p' artifacts/verify.md
-```
-
-Fresh mountpoints may be owned by `root:root`. If the write probe fails with `EACCES`, fix ownership first.
-
-## 6. Create Alias Namespace and Logical Filesystem
-
-```bash
-bash scripts/setup/07_aliases.sh
-ls -l /srv/jbofs/raw
-ls -l /srv/jbofs/aliased
-ls -ld /srv/jbofs/logical
-```
-
-This creates:
-
-- `/srv/jbofs/raw/<stable-id>` as the canonical filesystem mount roots
-- `/srv/jbofs/aliased/disk-N` as convenience symlinks to the raw roots
-- `/srv/jbofs/logical` as the singular logical symlink filesystem
-
-At this point setup is complete.
-
-## Next Steps
-
-- Use [User Guide](/home/fozga/r/art/nvme/docs/user-guide.md) for `jbofs cp`, `jbofs rm`, `jbofs sync`, and `jbofs prune`
-- Use [Benchmarking](/home/fozga/r/art/nvme/docs/benchmarking.md) for fio and reports
+- [user-guide.md](/home/fozga/r/art/jbofs2/docs/user-guide.md) for day-to-day commands
+- [design.md](/home/fozga/r/art/jbofs2/docs/design.md) for semantics and limitations
+- [roadmap.md](/home/fozga/r/art/jbofs2/docs/roadmap.md) for planned follow-up work

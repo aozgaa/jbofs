@@ -1,101 +1,94 @@
 # Design
 
-`jbofs` is a "just bunch of file systems" layout for storing files explicitly on multiple independent XFS-backed filesystems while presenting a separate logical namespace of symlinks.
+`jbofs` is a "just bunch of file systems" workflow, not a new filesystem.
+It manages a set of independent physical roots plus a separate logical tree of symlinks.
 
 ## Core Model
 
-- Raw filesystems live under `/srv/jbofs/raw/<stable-id>/...`
-- Aliased filesystems live under `/srv/jbofs/aliased/disk-N/...`
-- Logical symlinks live under `/srv/jbofs/logical/...`
+Each configured root has three identities:
 
-This means physical placement is explicit, while user-facing paths can stay stable and category-oriented.
+- `root_path`: the real filesystem location where data is stored
+- `alias`: an optional operator-friendly path, usually a symlink to `root_path`
+- `shortname`: the CLI name used with `jbofs cp --disk`
 
-## Why This Design
+The config also defines one `logical_root`, which contains symlinks to physical files.
 
-`jbofs` deliberately avoids:
-
-- RAID/LVM striping
-- pooled/FUSE filesystems such as mergerfs
-- automatic balancing or data migration
-
-Reasons:
-
-- each disk stays independently mountable and recoverable
-- physical placement is predictable
-- failure domains stay simple
-- there is no hidden allocation policy to debug later
-
-## Physical vs Logical Paths
-
-Physical path:
+Example:
 
 ```text
-/srv/jbofs/aliased/disk-0/pcaps/symbol=ES/date=2026-03-11/file1.pcap
+physical file: /srv/jbofs/raw/disk-a/media/movie.mkv
+alias path:    /srv/jbofs/aliases/disk-0/media/movie.mkv
+logical link:  /srv/jbofs/logical/media/movie.mkv
 ```
 
-Logical path:
+## Write Path
 
-```text
-/srv/jbofs/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
-```
+`jbofs cp`:
 
-The logical path is a symlink pointing at the physical file.
+1. Normalizes the requested logical path relative to `logical_root`
+2. Selects one configured root
+3. Copies the source file into that root
+4. Creates a symlink at `logical_root/<logical-path>` pointing at the physical file
 
-## Raw and Aliased Filesystems
+Destination conflicts are rejected. `jbofs` does not overwrite an existing logical path.
 
-Raw mount roots under `/srv/jbofs/raw/<stable-id>` are the canonical identity for each filesystem. Aliased roots under `/srv/jbofs/aliased/disk-N` are convenience symlinks created after setup.
+## Placement Model
 
-This split exists because:
+Placement is intentionally simple.
 
-- stable IDs survive device enumeration changes better than transient block-device names
-- `disk-N` aliases are much easier to type during day-to-day use
+- `--disk <NAME>` writes to a specific configured root by shortname
+- `--policy first` uses the first configured root
+- `--policy most-free` chooses the root with the most available space
+- if neither flag is provided, the config's `placement.default_policy` is used
 
-## Explicit Placement
+There is no background rebalance, migration, or pooled allocator.
 
-`jbofs cp` requires either:
+## Remove Model
 
-- `--disk=disk-N`
-- or a placement policy such as `--policy=most-free` or `--policy=random`
+`jbofs rm` operates on a logical path only.
 
-This keeps disk choice explicit at the command boundary. The system does not silently rebalance or choose hidden placement rules.
+- it resolves the path under `logical_root`
+- it requires that the logical entry is a symlink
+- it requires that the symlink target is inside one of the configured `root_path` values
+- it deletes the physical file target if present
+- it always deletes the logical symlink
 
-## Sync and Prune Separation
+If the physical file is already missing, removal still succeeds and reports that the data was already gone internally.
 
-Repair operations are split on purpose:
+## Repair Model
 
-- `jbofs sync` is additive only and creates missing logical symlinks
-- `jbofs prune` removes broken logical symlinks only
+Repair is split into two commands:
 
-This avoids a single “fix everything” command that can both create and delete state.
+- `jbofs sync` scans every configured physical root and creates missing logical symlinks
+- `jbofs prune` scans `logical_root` and removes broken symlinks
 
-## Remove Semantics
+`jbofs sync` is additive. It does not overwrite conflicts. If a logical path already exists and points somewhere else, it is counted as a conflict and left unchanged.
 
-`jbofs rm` can operate from either side:
+`jbofs prune` is destructive only with respect to dead symlinks. It never deletes physical data.
 
-- logical path input
-- physical path input
+## Path Semantics
 
-When removing from a physical path, all matching logical symlinks are removed. This avoids ambiguous partial cleanup when multiple logical entries point to one physical file.
+Logical paths may be passed either as:
 
-## Recursive Copy Semantics
+- a relative path such as `media/movie.mkv`
+- an absolute path under `logical_root`
 
-Recursive `jbofs cp` follows rsync-style source semantics:
+Logical paths must not contain empty components, `.` or `..`.
 
-- `srcdir/` copies contents
-- `srcdir` copies the directory itself
+Physical roots and aliases must be absolute paths in the config.
 
-Recursive copy also requires exactly one grouping mode:
-
-- `--round-robin`
-- `--batch`
-
-This makes recursive placement predictable instead of implicit.
+The current commands consult `root_path` and `shortname`. `alias` is stored in the config for clarity and future tooling, but is not part of the current read/write path.
 
 ## Non-Goals
 
-- no transparent pooled mount like `/srv/jbofs/data`
-- no automatic rebalance
-- no data redundancy
-- no background healing
+The current implementation does not provide:
 
-`jbofs` is intentionally simple: explicit physical writes, explicit logical namespace, explicit repair commands.
+- a pooled mount
+- recursive copy or recursive remove
+- dry-run support
+- automatic alias creation
+- redundancy, checksums, snapshots, or self-healing
+
+The design goal is a narrow, explicit storage-management tool with simple failure domains.
+
+For concrete setup and usage examples, see [setup-guide.md](/home/fozga/r/art/jbofs2/docs/setup-guide.md) and [user-guide.md](/home/fozga/r/art/jbofs2/docs/user-guide.md).

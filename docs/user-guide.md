@@ -1,125 +1,148 @@
 # User Guide
 
-This guide covers normal file operations after `jbofs` setup is complete.
+This guide covers the current `jbofs` command set.
 
-Before using these commands, complete [Setup Guide](/home/fozga/r/art/nvme/docs/setup-guide.md).
+## Command Summary
 
-## Namespace Model
-
-- Real files live under `/srv/jbofs/raw/<stable-id>/...`
-- Friendly physical aliases exist under `/srv/jbofs/aliased/disk-N`
-- Logical symlinks live under `/srv/jbofs/logical/...`
-
-In normal use:
-
-- write explicitly to one disk through `jbofs cp`
-- remove files with `jbofs rm`
-- repair missing logical links with `jbofs sync`
-- remove broken logical links with `jbofs prune`
-
-## Copy Files Into jbofs
-
-Copy one file to a specific disk:
-
-```bash
-jbofs cp --disk=disk-2 capture.pcap pcaps/symbol=ES/date=2026-03-11/file1.pcap
+```text
+jbofs init
+jbofs cp [-d <NAME>] [-p <POL>] <SOURCE> <LOGICAL_PATH>
+jbofs rm <LOGICAL_PATH>
+jbofs sync
+jbofs prune
 ```
 
-Choose a disk by policy:
+Global options:
+
+- `-c, --config <PATH>`: choose a config file
+- `-h, --help`: show help
+
+Before using these commands, complete [setup-guide.md](/home/fozga/r/art/jbofs2/docs/setup-guide.md).
+
+## How Paths Work
+
+`LOGICAL_PATH` may be either:
+
+- a relative path like `media/movie.mkv`
+- an absolute path under the configured logical root
+
+Both forms refer to the same managed logical entry.
+
+Example config:
+
+- logical root: `/srv/jbofs/logical`
+
+Then these are equivalent:
 
 ```bash
-jbofs cp --policy=most-free capture.pcap pcaps/symbol=ES/date=2026-03-11/file2.pcap
-jbofs cp --policy=random capture.pcap pcaps/symbol=ES/date=2026-03-11/file3.pcap
+jbofs rm media/movie.mkv
+jbofs rm /srv/jbofs/logical/media/movie.mkv
 ```
 
-Dry run:
+## `jbofs cp`
+
+Copy a source file into one managed physical root and create the logical symlink.
+
+Examples:
 
 ```bash
-jbofs cp --disk=disk-1 --dry-run capture.pcap pcaps/test/file1.pcap
+jbofs cp --disk disk-1 ./movie.mkv media/movie.mkv
+jbofs cp --policy first ./movie.mkv media/movie.mkv
+jbofs cp --policy most-free ./movie.mkv media/movie.mkv
 ```
 
-Recursive copy:
+Notes:
+
+- `--disk` and `--policy` are mutually exclusive
+- if neither is provided, the config's default placement policy is used
+- the source must be a regular file or named pipe
+- the destination logical path must not already exist
+- parent directories under the selected physical root and logical root are created automatically
+
+The command does not support recursive copies in the current implementation.
+
+## `jbofs rm`
+
+Remove a managed logical entry and its physical target.
+
+Examples:
 
 ```bash
-jbofs cp -r --policy=most-free --batch ./captures pcaps/2026-03-12
-jbofs cp -r --policy=random --round-robin ./captures/ pcaps/2026-03-12
+jbofs rm media/movie.mkv
+jbofs rm /srv/jbofs/logical/media/movie.mkv
 ```
 
-Rsync-style source semantics apply:
+Behavior:
 
-- `srcdir/` copies contents
-- `srcdir` copies the directory itself
+- the input must resolve to a symlink inside the configured logical root
+- the symlink target must be inside one of the configured physical roots
+- if the target file already disappeared, `jbofs rm` still removes the logical symlink
 
-## Remove Files
+The command does not accept physical paths and does not perform recursive deletes in the current implementation.
 
-Remove both the logical symlink and the physical file:
+## `jbofs sync`
 
-```bash
-jbofs rm /srv/jbofs/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
-```
+Scan all configured physical roots and create any missing logical symlinks.
 
-Remove only the logical symlink:
-
-```bash
-jbofs rm --ensure-logical --rm-link /srv/jbofs/logical/pcaps/symbol=ES/date=2026-03-11/file1.pcap
-```
-
-Remove by physical path:
-
-```bash
-jbofs rm --ensure-physical --rm-both /srv/jbofs/aliased/disk-0/pcaps/symbol=ES/date=2026-03-11/file1.pcap
-```
-
-Recursive remove:
-
-```bash
-jbofs rm -r --ensure-logical /srv/jbofs/logical/pcaps/2026-03-11
-```
-
-Dry-run first when in doubt.
-
-## Sync Missing Logical Links
-
-If you manually add files under `/srv/jbofs/raw/...`, rebuild missing logical symlinks with:
+Example:
 
 ```bash
 jbofs sync
 ```
 
-Scope to one disk:
+Typical use:
 
-```bash
-jbofs sync --disk=disk-1
-```
+1. A file is created manually under a physical root.
+2. `jbofs sync` discovers it.
+3. A symlink is created under `logical_root` using the same relative path.
 
-Scope to one subtree:
+Conflict handling:
 
-```bash
-jbofs sync --disk-path /srv/jbofs/aliased/disk-0/pcaps --logical-prefix pcaps/2026-03-12
-```
+- if the logical path does not exist, the symlink is created
+- if the logical path already points to the same physical file, it is counted as unchanged
+- if the logical path exists but points elsewhere, or is not a symlink, it is counted as a conflict and left untouched
 
-Dry-run:
+## `jbofs prune`
 
-```bash
-jbofs sync --dry-run
-```
+Remove broken symlinks from the logical tree.
 
-## Prune Broken Logical Links
-
-If physical files were removed manually, prune stale logical symlinks with:
+Example:
 
 ```bash
 jbofs prune
 ```
 
-Scope to one subtree:
+Typical use:
+
+1. A physical file is removed manually.
+2. Its logical symlink becomes broken.
+3. `jbofs prune` deletes the dead symlink.
+
+The command does not delete physical files.
+
+## Config Selection
+
+Config lookup precedence is:
+
+1. `-c /path/to/fs_config.json`
+2. `JBOFS_CONFIG_PATH`
+3. `$XDG_CONFIG_HOME/jbofs/fs_config.json`
+4. `~/.config/jbofs/fs_config.json`
+
+Example:
 
 ```bash
-jbofs prune --logical-prefix pcaps/2026-03-12
+jbofs -c ./fs_config.json sync
 ```
 
-Dry-run:
+## Current Limitations
 
-```bash
-jbofs prune --dry-run
-```
+The current CLI does not support:
+
+- recursive copy
+- recursive remove
+- dry-run mode
+- scoping `sync` or `prune` to one subtree
+- automatic alias management
+
+For planned follow-up work, see [roadmap.md](/home/fozga/r/art/jbofs2/docs/roadmap.md).
