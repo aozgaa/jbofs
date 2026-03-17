@@ -10,6 +10,7 @@ jbofs cp [-d <NAME>] [-p <POL>] <SOURCE> <LOGICAL_PATH>
 jbofs rm <LOGICAL_PATH>
 jbofs sync
 jbofs prune
+jbofs query root-for-shortname <SHORTNAME>
 ```
 
 Global options:
@@ -119,6 +120,22 @@ Typical use:
 3. `jbofs prune` deletes the dead symlink.
 
 The command does not delete physical files.
+
+## `jbofs query root-for-shortname`
+
+Look up the configured `root_path` for a physical root shortname.
+
+Example:
+
+```bash
+jbofs query root-for-shortname disk-1
+```
+
+Behavior:
+
+- prints the configured `root_path` followed by a newline
+- returns an error if the shortname is not configured
+- does not canonicalize the configured path before printing it
 
 ## Config Selection
 

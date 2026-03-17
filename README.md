@@ -16,6 +16,7 @@ Current commands:
 - `jbofs rm`
 - `jbofs sync`
 - `jbofs prune`
+- `jbofs query root-for-shortname`
 
 `jbofs` is configured with a JSON file. By default it is loaded from:
 

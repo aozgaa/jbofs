@@ -242,3 +242,41 @@ test "stringify config produces root_path schema" {
     try std.testing.expect(std.mem.indexOf(u8, output, "\"root_path\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "\"first\"") != null);
 }
+
+test "find root by shortname returns configured root" {
+    const config = Config{
+        .version = 1,
+        .logical_root = "/srv/jbofs/logical",
+        .roots = &.{
+            .{
+                .root_path = "/srv/jbofs/raw/disk-a",
+                .alias = "/srv/jbofs/aliases/disk-0",
+                .shortname = "disk-0",
+            },
+            .{
+                .root_path = "/srv/jbofs/raw/disk-b",
+                .alias = "/srv/jbofs/aliases/disk-1",
+                .shortname = "disk-1",
+            },
+        },
+    };
+
+    const root = findRootByShortname(config, "disk-1") orelse return error.ExpectedRoot;
+    try std.testing.expectEqualStrings("/srv/jbofs/raw/disk-b", root.root_path);
+}
+
+test "find root by shortname returns null when missing" {
+    const config = Config{
+        .version = 1,
+        .logical_root = "/srv/jbofs/logical",
+        .roots = &.{
+            .{
+                .root_path = "/srv/jbofs/raw/disk-a",
+                .alias = "/srv/jbofs/aliases/disk-0",
+                .shortname = "disk-0",
+            },
+        },
+    };
+
+    try std.testing.expect(findRootByShortname(config, "disk-9") == null);
+}
