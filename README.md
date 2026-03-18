@@ -5,9 +5,10 @@
 At a glance:
 
 - physical files live under configured roots such as `/srv/jbofs/raw/disk-a`
-- optional aliases such as `/srv/jbofs/aliases/disk-0` point at those roots
+- each root has a configured shortname such as `disk-0` for `jbofs cp --disk`
 - logical symlinks live under a separate tree such as `/srv/jbofs/logical`
 - writes are explicit: `jbofs` copies data to one root, then creates one logical symlink
+- `jbofs query root-for-shortname <SHORTNAME>` resolves a configured shortname back to its physical root
 
 Current commands:
 

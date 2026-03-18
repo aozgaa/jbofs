@@ -62,7 +62,7 @@ const init_params = clap.parseParamsComptime(
 
 const cp_params = clap.parseParamsComptime(
     \\-h, --help          Display this help and exit.
-    \\-d, --disk <NAME>   Explicit physical root shortname.
+    \\-d, --disk <NAME>   Explicit configured root shortname.
     \\-p, --policy <POL>  Placement policy.
     \\<SOURCE>
     \\<LOGICAL_PATH>

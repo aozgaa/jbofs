@@ -38,7 +38,7 @@ The main semantic questions are:
 
 - a config-driven set of independent physical roots
 - direct physical storage under configured `root_path` values such as `/srv/jbofs/raw/disk-a`
-- optional alias paths such as `/srv/jbofs/aliases/disk-0`, stored in config for operator clarity and future tooling
+- shortname-based lookup via `jbofs query root-for-shortname`
 - a separate logical symlink namespace under a configured `logical_root`, commonly `/srv/jbofs/logical`
 - explicit `init`, `cp`, `rm`, `sync`, and `prune` commands
 

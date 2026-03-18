@@ -33,12 +33,12 @@ zig build run -- cp --help
 
 ## Repository Layout
 
-- [src/main.zig](/home/fozga/r/art/jbofs2/src/main.zig): entrypoint and command dispatch
-- [src/cli.zig](/home/fozga/r/art/jbofs2/src/cli.zig): CLI parsing and help text
-- [src/config.zig](/home/fozga/r/art/jbofs2/src/config.zig): config schema, validation, loading, path resolution
-- [src/pathing.zig](/home/fozga/r/art/jbofs2/src/pathing.zig): logical-path normalization and root checks
-- [src/commands/](/home/fozga/r/art/jbofs2/src/commands): command entrypoints
-- [src/lib/](/home/fozga/r/art/jbofs2/src/lib): operational logic and tests
+- [src/main.zig](../src/main.zig): entrypoint and command dispatch
+- [src/cli.zig](../src/cli.zig): CLI parsing and help text
+- [src/config.zig](../src/config.zig): config schema, validation, loading, path resolution
+- [src/pathing.zig](../src/pathing.zig): logical-path normalization and root checks
+- [src/commands/](../src/commands): command entrypoints
+- [src/lib/](../src/lib): operational logic and tests
 
 ## Command Responsibilities
 
@@ -75,7 +75,7 @@ zig build run -- cp --help
 
 ## Important Current Semantics
 
-- `alias` paths are stored in config but are not consulted by the current operational commands
+- `jbofs query root-for-shortname` resolves configured shortnames to physical `root_path` values
 - `sync` and `prune` have no subtree filtering
 - `rm` is logical-path only
 - `cp` supports regular files and named pipes, not directories
@@ -94,9 +94,9 @@ Most behavior is tested at the library layer with temporary directories. The tes
 
 When changing CLI semantics, update:
 
-- command parsing in [src/cli.zig](/home/fozga/r/art/jbofs2/src/cli.zig)
-- command wrappers in [src/commands/](/home/fozga/r/art/jbofs2/src/commands)
-- corresponding library behavior and tests in [src/lib/](/home/fozga/r/art/jbofs2/src/lib)
-- user-facing docs in [docs/](/home/fozga/r/art/jbofs2/docs)
+- command parsing in [src/cli.zig](../src/cli.zig)
+- command wrappers in [src/commands/](../src/commands)
+- corresponding library behavior and tests in [src/lib/](../src/lib)
+- user-facing docs in [docs/](./)
 
-Open future work is tracked in [roadmap.md](/home/fozga/r/art/jbofs2/docs/roadmap.md).
+Open future work is tracked in [roadmap.md](./roadmap.md).

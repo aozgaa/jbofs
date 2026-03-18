@@ -11,7 +11,6 @@ pub const Placement = struct {
 
 pub const Root = struct {
     root_path: []const u8,
-    alias: []const u8,
     shortname: []const u8,
 };
 
@@ -35,7 +34,7 @@ pub fn parseConfig(allocator: std.mem.Allocator, source: []const u8) !ParsedConf
 }
 
 pub fn validateConfig(config: Config) !void {
-    if (config.version != 1) {
+    if (config.version != 2) {
         return error.InvalidVersion;
     }
 
@@ -50,10 +49,6 @@ pub fn validateConfig(config: Config) !void {
     for (config.roots, 0..) |root, i| {
         if (!std.fs.path.isAbsolute(root.root_path)) {
             return error.RootPathMustBeAbsolute;
-        }
-
-        if (!std.fs.path.isAbsolute(root.alias)) {
-            return error.AliasPathMustBeAbsolute;
         }
 
         if (root.shortname.len == 0) {
@@ -125,12 +120,11 @@ pub fn stringifyConfig(allocator: std.mem.Allocator, config: Config) ![]u8 {
 test "parse valid config with roots" {
     const source =
         \\{
-        \\  "version": 1,
+        \\  "version": 2,
         \\  "logical_root": "/srv/jbofs/logical",
         \\  "roots": [
         \\    {
         \\      "root_path": "/srv/jbofs/raw/disk-a",
-        \\      "alias": "/srv/jbofs/aliases/disk-0",
         \\      "shortname": "disk-0"
         \\    }
         \\  ],
@@ -143,7 +137,7 @@ test "parse valid config with roots" {
     const parsed = try parseConfig(std.testing.allocator, source);
     defer parsed.deinit();
 
-    try std.testing.expectEqual(@as(u32, 1), parsed.value.version);
+    try std.testing.expectEqual(@as(u32, 2), parsed.value.version);
     try std.testing.expectEqualStrings("/srv/jbofs/raw/disk-a", parsed.value.roots[0].root_path);
     try std.testing.expectEqual(.@"most-free", parsed.value.placement.default_policy);
 }
@@ -151,17 +145,15 @@ test "parse valid config with roots" {
 test "reject duplicate shortname" {
     const source =
         \\{
-        \\  "version": 1,
+        \\  "version": 2,
         \\  "logical_root": "/srv/jbofs/logical",
         \\  "roots": [
         \\    {
         \\      "root_path": "/srv/jbofs/raw/disk-a",
-        \\      "alias": "/srv/jbofs/aliases/disk-0",
         \\      "shortname": "disk-0"
         \\    },
         \\    {
         \\      "root_path": "/srv/jbofs/raw/disk-b",
-        \\      "alias": "/srv/jbofs/aliases/disk-1",
         \\      "shortname": "disk-0"
         \\    }
         \\  ]
@@ -174,17 +166,15 @@ test "reject duplicate shortname" {
 test "reject duplicate root_path" {
     const source =
         \\{
-        \\  "version": 1,
+        \\  "version": 2,
         \\  "logical_root": "/srv/jbofs/logical",
         \\  "roots": [
         \\    {
         \\      "root_path": "/srv/jbofs/raw/disk-a",
-        \\      "alias": "/srv/jbofs/aliases/disk-0",
         \\      "shortname": "disk-0"
         \\    },
         \\    {
         \\      "root_path": "/srv/jbofs/raw/disk-a",
-        \\      "alias": "/srv/jbofs/aliases/disk-1",
         \\      "shortname": "disk-1"
         \\    }
         \\  ]
@@ -192,6 +182,23 @@ test "reject duplicate root_path" {
     ;
 
     try std.testing.expectError(error.DuplicateRootPath, parseConfig(std.testing.allocator, source));
+}
+
+test "reject config version 1" {
+    const source =
+        \\{
+        \\  "version": 1,
+        \\  "logical_root": "/srv/jbofs/logical",
+        \\  "roots": [
+        \\    {
+        \\      "root_path": "/srv/jbofs/raw/disk-a",
+        \\      "shortname": "disk-0"
+        \\    }
+        \\  ]
+        \\}
+    ;
+
+    try std.testing.expectError(error.InvalidVersion, parseConfig(std.testing.allocator, source));
 }
 
 test "resolve config path precedence" {
@@ -223,12 +230,11 @@ test "resolve config path precedence" {
 
 test "stringify config produces root_path schema" {
     const config = Config{
-        .version = 1,
+        .version = 2,
         .logical_root = "/srv/jbofs/logical",
         .roots = &.{
             .{
                 .root_path = "/srv/jbofs/raw/disk-a",
-                .alias = "/srv/jbofs/aliases/disk-0",
                 .shortname = "disk-0",
             },
         },
@@ -240,22 +246,21 @@ test "stringify config produces root_path schema" {
 
     try std.testing.expect(std.mem.indexOf(u8, output, "\"roots\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, output, "\"root_path\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, output, "\"alias\"") == null);
     try std.testing.expect(std.mem.indexOf(u8, output, "\"first\"") != null);
 }
 
 test "find root by shortname returns configured root" {
     const config = Config{
-        .version = 1,
+        .version = 2,
         .logical_root = "/srv/jbofs/logical",
         .roots = &.{
             .{
                 .root_path = "/srv/jbofs/raw/disk-a",
-                .alias = "/srv/jbofs/aliases/disk-0",
                 .shortname = "disk-0",
             },
             .{
                 .root_path = "/srv/jbofs/raw/disk-b",
-                .alias = "/srv/jbofs/aliases/disk-1",
                 .shortname = "disk-1",
             },
         },
@@ -267,12 +272,11 @@ test "find root by shortname returns configured root" {
 
 test "find root by shortname returns null when missing" {
     const config = Config{
-        .version = 1,
+        .version = 2,
         .logical_root = "/srv/jbofs/logical",
         .roots = &.{
             .{
                 .root_path = "/srv/jbofs/raw/disk-a",
-                .alias = "/srv/jbofs/aliases/disk-0",
                 .shortname = "disk-0",
             },
         },

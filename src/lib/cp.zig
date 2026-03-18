@@ -192,16 +192,12 @@ const OwnedConfig = struct {
     logical_root: []u8,
     root_a: []u8,
     root_b: []u8,
-    alias_a: []u8,
-    alias_b: []u8,
 
     fn deinit(self: *OwnedConfig, allocator: std.mem.Allocator) void {
         allocator.free(self.config.roots);
         allocator.free(self.logical_root);
         allocator.free(self.root_a);
         allocator.free(self.root_b);
-        allocator.free(self.alias_a);
-        allocator.free(self.alias_b);
     }
 };
 
@@ -209,24 +205,19 @@ fn makeConfig(allocator: std.mem.Allocator, tmp_root: []const u8) !OwnedConfig {
     const logical_root = try std.fs.path.join(allocator, &.{ tmp_root, "logical" });
     const root_a = try std.fs.path.join(allocator, &.{ tmp_root, "root-a" });
     const root_b = try std.fs.path.join(allocator, &.{ tmp_root, "root-b" });
-    const alias_a = try std.fs.path.join(allocator, &.{ tmp_root, "aliases", "disk-0" });
-    const alias_b = try std.fs.path.join(allocator, &.{ tmp_root, "aliases", "disk-1" });
-    const aliases_dir = try std.fs.path.join(allocator, &.{ tmp_root, "aliases" });
-    defer allocator.free(aliases_dir);
 
     try std.fs.cwd().makePath(logical_root);
     try std.fs.cwd().makePath(root_a);
     try std.fs.cwd().makePath(root_b);
-    try std.fs.cwd().makePath(aliases_dir);
 
     const roots = try allocator.dupe(cfg.Root, &.{
-        .{ .root_path = root_a, .alias = alias_a, .shortname = "disk-0" },
-        .{ .root_path = root_b, .alias = alias_b, .shortname = "disk-1" },
+        .{ .root_path = root_a, .shortname = "disk-0" },
+        .{ .root_path = root_b, .shortname = "disk-1" },
     });
 
     return .{
         .config = .{
-            .version = 1,
+            .version = 2,
             .logical_root = logical_root,
             .roots = roots,
             .placement = .{ .default_policy = .first },
@@ -234,8 +225,6 @@ fn makeConfig(allocator: std.mem.Allocator, tmp_root: []const u8) !OwnedConfig {
         .logical_root = logical_root,
         .root_a = root_a,
         .root_b = root_b,
-        .alias_a = alias_a,
-        .alias_b = alias_b,
     };
 }
 

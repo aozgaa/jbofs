@@ -5,10 +5,9 @@ It manages a set of independent physical roots plus a separate logical tree of s
 
 ## Core Model
 
-Each configured root has three identities:
+Each configured root has two identities:
 
 - `root_path`: the real filesystem location where data is stored
-- `alias`: an optional operator-friendly path, usually a symlink to `root_path`
 - `shortname`: the CLI name used with `jbofs cp --disk`
 
 The config also defines one `logical_root`, which contains symlinks to physical files.
@@ -17,7 +16,6 @@ Example:
 
 ```text
 physical file: /srv/jbofs/raw/disk-a/media/movie.mkv
-alias path:    /srv/jbofs/aliases/disk-0/media/movie.mkv
 logical link:  /srv/jbofs/logical/media/movie.mkv
 ```
 
@@ -75,9 +73,9 @@ Logical paths may be passed either as:
 
 Logical paths must not contain empty components, `.` or `..`.
 
-Physical roots and aliases must be absolute paths in the config.
+Physical roots must be absolute paths in the config.
 
-The current commands consult `root_path` and `shortname`. `alias` is stored in the config for clarity and future tooling, but is not part of the current read/write path.
+The current commands consult `root_path` and `shortname`. `jbofs query root-for-shortname` is the lookup helper for mapping a configured shortname back to its physical root.
 
 ## Non-Goals
 
@@ -86,9 +84,8 @@ The current implementation does not provide:
 - a pooled mount
 - recursive copy or recursive remove
 - dry-run support
-- automatic alias creation
 - redundancy, checksums, snapshots, or self-healing
 
 The design goal is a narrow, explicit storage-management tool with simple failure domains.
 
-For concrete setup and usage examples, see [setup-guide.md](/home/fozga/r/art/jbofs2/docs/setup-guide.md) and [user-guide.md](/home/fozga/r/art/jbofs2/docs/user-guide.md).
+For concrete setup and usage examples, see [setup-guide.md](./setup-guide.md) and [user-guide.md](./user-guide.md).

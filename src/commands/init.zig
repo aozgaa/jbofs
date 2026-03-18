@@ -10,6 +10,11 @@ pub const Args = struct {
     force: bool,
 };
 
+pub const RootPromptFields = struct {
+    root_path_label: []const u8 = "root path",
+    shortname_label: []const u8 = "shortname",
+};
+
 pub fn run(allocator: std.mem.Allocator, args: Args, config_override: ?[]const u8) !void {
     var env_map = try std.process.getEnvMap(allocator);
     defer env_map.deinit();
@@ -29,6 +34,14 @@ pub fn run(allocator: std.mem.Allocator, args: Args, config_override: ?[]const u
     try writer.interface.flush();
 }
 
+pub fn defaultShortnameForIndex(allocator: std.mem.Allocator, index: usize) ![]u8 {
+    return std.fmt.allocPrint(allocator, "disk-{d}", .{index});
+}
+
+pub fn rootPromptFields() RootPromptFields {
+    return .{};
+}
+
 fn promptForConfig(
     allocator: std.mem.Allocator,
     writer: *std.Io.Writer,
@@ -36,14 +49,10 @@ fn promptForConfig(
     const logical_root = try promptWithDefault(allocator, writer, "logical dir", "/srv/jbofs/logical");
     errdefer allocator.free(logical_root);
 
-    const alias_dir = try promptWithDefault(allocator, writer, "root alias dir", "/srv/jbofs/aliases");
-    defer allocator.free(alias_dir);
-
     var roots = std.ArrayList(init_lib.InitRootInput).empty;
     errdefer {
         for (roots.items) |root| {
             allocator.free(root.root_path);
-            allocator.free(root.alias);
             allocator.free(root.shortname);
         }
         roots.deinit(allocator);
@@ -63,18 +72,15 @@ fn promptForConfig(
         }
 
         const index = roots.items.len;
-        const default_shortname = try std.fmt.allocPrint(allocator, "disk-{d}", .{index});
+        const default_shortname = try defaultShortnameForIndex(allocator, index);
         defer allocator.free(default_shortname);
-        const default_alias = try std.fs.path.join(allocator, &.{ alias_dir, default_shortname });
-        defer allocator.free(default_alias);
 
-        const root_path = try promptRequired(allocator, writer, "root path");
-        const alias = try promptWithDefault(allocator, writer, "alias", default_alias);
-        const shortname = try promptWithDefault(allocator, writer, "shortname", default_shortname);
+        const prompt_fields = rootPromptFields();
+        const root_path = try promptRequired(allocator, writer, prompt_fields.root_path_label);
+        const shortname = try promptWithDefault(allocator, writer, prompt_fields.shortname_label, default_shortname);
 
         try roots.append(allocator, .{
             .root_path = root_path,
-            .alias = alias,
             .shortname = shortname,
         });
     }
@@ -93,7 +99,6 @@ fn promptForConfig(
     errdefer {
         for (owned_roots) |root| {
             allocator.free(root.root_path);
-            allocator.free(root.alias);
             allocator.free(root.shortname);
         }
         allocator.free(owned_roots);
@@ -166,7 +171,6 @@ fn freeOwnedConfig(allocator: std.mem.Allocator, built: config.Config) void {
     allocator.free(built.logical_root);
     for (built.roots) |root| {
         allocator.free(root.root_path);
-        allocator.free(root.alias);
         allocator.free(root.shortname);
     }
     allocator.free(built.roots);
@@ -191,4 +195,20 @@ test "normalize prompt value strips surrounding spaces" {
     defer std.testing.allocator.free(value);
 
     try std.testing.expectEqualStrings("no", value);
+}
+
+test "default shortname for index uses disk prefix" {
+    const zero = try defaultShortnameForIndex(std.testing.allocator, 0);
+    defer std.testing.allocator.free(zero);
+    try std.testing.expectEqualStrings("disk-0", zero);
+
+    const three = try defaultShortnameForIndex(std.testing.allocator, 3);
+    defer std.testing.allocator.free(three);
+    try std.testing.expectEqualStrings("disk-3", three);
+}
+
+test "root prompt fields omit alias" {
+    const fields = rootPromptFields();
+    try std.testing.expectEqualStrings("root path", fields.root_path_label);
+    try std.testing.expectEqualStrings("shortname", fields.shortname_label);
 }

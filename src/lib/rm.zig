@@ -65,41 +65,34 @@ const OwnedConfig = struct {
     config: cfg.Config,
     logical_root: []u8,
     root_a: []u8,
-    alias_a: []u8,
 
     fn deinit(self: *OwnedConfig, allocator: std.mem.Allocator) void {
         allocator.free(self.config.roots);
         allocator.free(self.logical_root);
         allocator.free(self.root_a);
-        allocator.free(self.alias_a);
     }
 };
 
 fn makeConfig(allocator: std.mem.Allocator, tmp_root: []const u8) !OwnedConfig {
     const logical_root = try std.fs.path.join(allocator, &.{ tmp_root, "logical" });
     const root_a = try std.fs.path.join(allocator, &.{ tmp_root, "root-a" });
-    const alias_a = try std.fs.path.join(allocator, &.{ tmp_root, "aliases", "disk-0" });
-    const aliases_dir = try std.fs.path.join(allocator, &.{ tmp_root, "aliases" });
-    defer allocator.free(aliases_dir);
 
     try std.fs.cwd().makePath(logical_root);
     try std.fs.cwd().makePath(root_a);
-    try std.fs.cwd().makePath(aliases_dir);
 
     const roots = try allocator.dupe(cfg.Root, &.{
-        .{ .root_path = root_a, .alias = alias_a, .shortname = "disk-0" },
+        .{ .root_path = root_a, .shortname = "disk-0" },
     });
 
     return .{
         .config = .{
-            .version = 1,
+            .version = 2,
             .logical_root = logical_root,
             .roots = roots,
             .placement = .{ .default_policy = .first },
         },
         .logical_root = logical_root,
         .root_a = root_a,
-        .alias_a = alias_a,
     };
 }
 

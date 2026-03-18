@@ -25,33 +25,33 @@ The Zig port preserved most of the complexity of the shell scripts, added a new 
 ### Concrete semantic drift
 
 1. The compiled CLI now advertises a `setup` command tree.
-   - In [src/main.zig](/home/fozga/r/art/jbofs/src/main.zig), top-level help includes `setup`.
+   - In [src/main.zig](../../src/main.zig), top-level help includes `setup`.
    - This is outside the four core verbs and makes the product feel larger than it needs to be.
 
 2. Runtime configuration is still environment-driven and implicit.
-   - [src/core/env.zig](/home/fozga/r/art/jbofs/src/core/env.zig) reads `RAW_ROOT`, `ALIASED_ROOT`, and `LOGICAL_ROOT`.
+   - [src/core/env.zig](../../src/core/env.zig) reads `RAW_ROOT`, `ALIASED_ROOT`, and `LOGICAL_ROOT`.
    - This keeps behavior scattered across shell state instead of one persistent config file.
 
 3. `cp` still carries recursive/group-placement behavior.
-   - [src/cli/cp.zig](/home/fozga/r/art/jbofs/src/cli/cp.zig) includes `--recursive`, `--round-robin`, `--batch`, `--disk`, `--policy`, `--force`, and `--dry-run`.
+   - [src/cli/cp.zig](../../src/cli/cp.zig) includes `--recursive`, `--round-robin`, `--batch`, `--disk`, `--policy`, `--force`, and `--dry-run`.
    - For the simplified model, recursive copy is unnecessary and placement should be easy to reason about.
 
 4. `rm` still supports multiple path-interpretation and deletion modes.
-   - [src/cli/rm.zig](/home/fozga/r/art/jbofs/src/cli/rm.zig) includes `--ensure-logical`, `--ensure-physical`, `--ensure-data`, `--rm-link`, `--rm-data`, `--rm-both`, and `--recursive`.
+   - [src/cli/rm.zig](../../src/cli/rm.zig) includes `--ensure-logical`, `--ensure-physical`, `--ensure-data`, `--rm-link`, `--rm-data`, `--rm-both`, and `--recursive`.
    - This broadens `rm` from "remove one logical file and its data" into a more general garbage-collection tool.
 
 5. `sync` still exposes scan-source complexity.
-   - [src/cli/sync.zig](/home/fozga/r/art/jbofs/src/cli/sync.zig) includes `--disk`, `--disk-path`, and `--logical-prefix`.
+   - [src/cli/sync.zig](../../src/cli/sync.zig) includes `--disk`, `--disk-path`, and `--logical-prefix`.
    - The disk-path/stable-root logic is implementation-heavy for a command whose core job is just "recreate logical symlinks for data already on disk".
 
 6. `prune` is already close to the desired shape, but still inherits optional subtree filtering.
-   - [src/cli/prune.zig](/home/fozga/r/art/jbofs/src/cli/prune.zig) includes `--logical-prefix`.
+   - [src/cli/prune.zig](../../src/cli/prune.zig) includes `--logical-prefix`.
    - That is acceptable if kept as a narrow convenience, but not necessary for the minimal version.
 
 7. The repository still carries substantial setup machinery and tests for it.
    - `scripts/setup/*`
-   - [tests/test_plan_guardrails.py](/home/fozga/r/art/jbofs/tests/test_plan_guardrails.py)
-   - [tests/test_inventory_classification.py](/home/fozga/r/art/jbofs/tests/test_inventory_classification.py)
+   - [tests/test_plan_guardrails.py](../../tests/test_plan_guardrails.py)
+   - [tests/test_inventory_classification.py](../../tests/test_inventory_classification.py)
    - These are valid tools in some environments, but they are orthogonal to the core `jbofs` data model.
 
 8. The port duplicated legacy semantics rather than using the rewrite as a simplification point.
@@ -60,6 +60,7 @@ The Zig port preserved most of the complexity of the shell scripts, added a new 
 ### Recommended direction
 
 Keep the old setup scripts outside the core specification. They may remain in the repository as separate operator utilities, but they should not define the core `jbofs` contract and should not shape the main CLI.
+The current implementation uses shortname-based lookup via a query helper and does not depend on on-filesystem aliases.
 
 The core CLI should be:
 
@@ -118,17 +119,15 @@ JSON is easy to parse in Zig, explicit, and avoids ambient shell state.
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "logical_root": "/srv/jbofs/logical",
   "roots": [
     {
       "root_path": "/srv/jbofs/raw/nvme-S5P2NG0R607870N",
-      "alias": "/srv/jbofs/aliases/disk-0",
       "shortname": "disk-0"
     },
     {
       "root_path": "/srv/jbofs/raw/nvme-S5P2NG0R608243B",
-      "alias": "/srv/jbofs/aliases/disk-1",
       "shortname": "disk-1"
     }
   ],
@@ -140,7 +139,7 @@ JSON is easy to parse in Zig, explicit, and avoids ambient shell state.
 
 ### Schema rules
 
-1. `version` is required and currently must equal `1`.
+1. `version` is required and currently must equal `2`.
 2. `logical_root` is required and absolute.
 3. `roots` is required and non-empty.
 4. Each root entry has:
@@ -202,11 +201,9 @@ jbofs init [--config PATH] [--force]
 4. Parent directories for the config file should be created as needed.
 5. ask the user interactively how they want jbofs setup:
   1. logical dir (default /srv/jbofs/logical)
-  2. fs alias dir (default /srv/jbofs/aliases)
   3. add a physical root? while true (at least once, else print error and retry):
     1. ask for root path
-    2. ask for alias (default /src/jbofs/aliases/disk-<N>)
-    3. ask for shortname (default disk-<N>)
+    2. ask for shortname (default disk-<N>)
   4. ask for placement policy (`most-free|random`) (default `most-free`)
 6. serialize completed config to disk. (this step alone should be unit testable)
 
@@ -216,10 +213,10 @@ The inital file should be well-formed, something like
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "logical_root": "/srv/jbofs/logical",
   "roots": [
-   { "root_path": "...", "alias": "...", "shortname": "..." }
+   { "root_path": "...", "shortname": "..." }
   ],
   "placement": {
     "default_policy": "most-free"

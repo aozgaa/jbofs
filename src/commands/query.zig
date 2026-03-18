@@ -54,17 +54,15 @@ test "query root-for-shortname prints configured root path" {
 
     const config_source =
         \\{
-        \\  "version": 1,
+        \\  "version": 2,
         \\  "logical_root": "/srv/jbofs/logical",
         \\  "roots": [
         \\    {
         \\      "root_path": "/srv/jbofs/raw/disk-a",
-        \\      "alias": "/srv/jbofs/aliases/disk-0",
         \\      "shortname": "disk-0"
         \\    },
         \\    {
         \\      "root_path": "/srv/jbofs/raw/disk-b",
-        \\      "alias": "/srv/jbofs/aliases/disk-1",
         \\      "shortname": "disk-1"
         \\    }
         \\  ]
@@ -94,12 +92,11 @@ test "query root-for-shortname returns unknown root name for missing shortname" 
 
     const config_source =
         \\{
-        \\  "version": 1,
+        \\  "version": 2,
         \\  "logical_root": "/srv/jbofs/logical",
         \\  "roots": [
         \\    {
         \\      "root_path": "/srv/jbofs/raw/disk-a",
-        \\      "alias": "/srv/jbofs/aliases/disk-0",
         \\      "shortname": "disk-0"
         \\    }
         \\  ]

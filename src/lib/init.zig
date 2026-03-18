@@ -13,7 +13,7 @@ pub fn buildConfig(input: InitConfigInput) !cfg.Config {
     if (input.roots.len == 0) return error.NoRootsConfigured;
 
     return .{
-        .version = 1,
+        .version = 2,
         .logical_root = input.logical_root,
         .roots = @ptrCast(input.roots),
         .placement = .{ .default_policy = input.default_policy },
@@ -68,7 +68,6 @@ test "build config creates valid root_path schema" {
         .roots = &.{
             .{
                 .root_path = "/srv/jbofs/raw/disk-a",
-                .alias = "/srv/jbofs/aliases/disk-0",
                 .shortname = "disk-0",
             },
         },
@@ -96,7 +95,6 @@ test "write config to new path" {
         .roots = &.{
             .{
                 .root_path = "/srv/jbofs/raw/disk-a",
-                .alias = "/srv/jbofs/aliases/disk-0",
                 .shortname = "disk-0",
             },
         },
@@ -125,7 +123,6 @@ test "refuse overwrite without force" {
         .roots = &.{
             .{
                 .root_path = "/srv/jbofs/raw/disk-a",
-                .alias = "/srv/jbofs/aliases/disk-0",
                 .shortname = "disk-0",
             },
         },
@@ -150,7 +147,6 @@ test "allow overwrite with force" {
         .roots = &.{
             .{
                 .root_path = "/srv/jbofs/raw/disk-a",
-                .alias = "/srv/jbofs/aliases/disk-0",
                 .shortname = "disk-0",
             },
         },
@@ -161,7 +157,6 @@ test "allow overwrite with force" {
         .roots = &.{
             .{
                 .root_path = "/srv/jbofs/raw/disk-b",
-                .alias = "/srv/jbofs/aliases/disk-1",
                 .shortname = "disk-1",
             },
         },

@@ -18,7 +18,7 @@ Global options:
 - `-c, --config <PATH>`: choose a config file
 - `-h, --help`: show help
 
-Before using these commands, complete [setup-guide.md](/home/fozga/r/art/jbofs2/docs/setup-guide.md).
+Before using these commands, complete [setup-guide.md](./setup-guide.md).
 
 ## How Paths Work
 
@@ -160,6 +160,5 @@ The current CLI does not support:
 - recursive remove
 - dry-run mode
 - scoping `sync` or `prune` to one subtree
-- automatic alias management
 
-For planned follow-up work, see [roadmap.md](/home/fozga/r/art/jbofs2/docs/roadmap.md).
+For planned follow-up work, see [roadmap.md](./roadmap.md).

@@ -5,6 +5,7 @@ Purpose: isolate why only one NVMe device is enumerating in Linux.
 Current known state:
 - Linux sees only `/dev/nvme0n1` (boot disk).
 - This indicates likely BIOS/slot/adapter/hardware enumeration issue, not mount/filesystem issue.
+This checklist is historical operational context and does not define the current `jbofs` design.
 
 ## Rules
 

@@ -1,6 +1,6 @@
 # Setup Guide
 
-This guide covers setting up the current `jbofs` CLI. In this repository, setup means creating directories and writing a valid config file. Disk provisioning, formatting, mounting, and alias creation are outside the scope of the tool.
+This guide covers setting up the current `jbofs` CLI. In this repository, setup means creating directories and writing a valid config file. Disk provisioning, formatting, and mounting are outside the scope of the tool.
 
 ## Prerequisites
 
@@ -8,15 +8,12 @@ Before using `jbofs`, prepare the filesystem layout yourself:
 
 - create or mount one or more physical roots
 - choose a logical root directory
-- optionally create alias symlinks for operator convenience
 
 Example layout:
 
 ```text
 /srv/jbofs/raw/disk-a
 /srv/jbofs/raw/disk-b
-/srv/jbofs/aliases/disk-0 -> /srv/jbofs/raw/disk-a
-/srv/jbofs/aliases/disk-1 -> /srv/jbofs/raw/disk-b
 /srv/jbofs/logical
 ```
 
@@ -45,9 +42,7 @@ zig build run -- init
 The interactive prompts ask for:
 
 - `logical dir`
-- `root alias dir`
 - one or more physical roots
-- each root's alias path
 - each root's shortname
 - default placement policy
 
@@ -68,17 +63,15 @@ The config schema is:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "logical_root": "/srv/jbofs/logical",
   "roots": [
     {
       "root_path": "/srv/jbofs/raw/disk-a",
-      "alias": "/srv/jbofs/aliases/disk-0",
       "shortname": "disk-0"
     },
     {
       "root_path": "/srv/jbofs/raw/disk-b",
-      "alias": "/srv/jbofs/aliases/disk-1",
       "shortname": "disk-1"
     }
   ],
@@ -90,15 +83,16 @@ The config schema is:
 
 Current validation rules:
 
-- `version` must be `1`
+- `version` must be `2`
 - `logical_root` must be absolute
 - every `root_path` must be absolute
-- every `alias` must be absolute
 - at least one root is required
 - `shortname` values must be non-empty and unique
 - `root_path` values must be unique
 
-`jbofs` does not create the alias symlinks for you. The paths in `alias` are currently descriptive metadata for operator clarity and future tooling; the current commands read and write through `root_path`.
+If you have an older config that still contains `alias` fields, regenerate it or edit those fields out before using this version.
+
+`jbofs query root-for-shortname <SHORTNAME>` resolves a configured shortname to the matching `root_path` when you need the physical location for a disk.
 
 ## 4. Create the Logical Root if Needed
 
@@ -110,14 +104,12 @@ Example:
 sudo mkdir -p /srv/jbofs
 sudo chown -R $(id -nu):$(id -nu) /srv/jbofs
 mkdir -p /srv/jbofs/raw/disk-a /srv/jbofs/raw/disk-b /srv/jbofs/logical
-ln -sfn /srv/jbofs/raw/disk-a /srv/jbofs/aliases/disk-0
-ln -sfn /srv/jbofs/raw/disk-b /srv/jbofs/aliases/disk-1
 ```
 
 ## 5. Continue With Normal Usage
 
 Once the config exists, use:
 
-- [user-guide.md](/home/fozga/r/art/jbofs2/docs/user-guide.md) for day-to-day commands
-- [design.md](/home/fozga/r/art/jbofs2/docs/design.md) for semantics and limitations
-- [roadmap.md](/home/fozga/r/art/jbofs2/docs/roadmap.md) for planned follow-up work
+- [user-guide.md](./user-guide.md) for day-to-day commands
+- [design.md](./design.md) for semantics and limitations
+- [roadmap.md](./roadmap.md) for planned follow-up work
