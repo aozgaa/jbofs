@@ -26,7 +26,7 @@ This document tracks likely follow-up work for `jbofs`. These are ideas and open
 ## Test Coverage
 
 - [x] expand `cp` testing for more source file kinds in a controlled environment
-- [ ] test block devices (skipped: requires root or loop device setup)
+- [ ] test block devices (skipped: requires root or loop device setup -- emulate with cgroups/container?)
 - [x] test character devices
 - [x] test sockets
 - [x] test symlink sources and decide whether to follow them
