@@ -42,6 +42,43 @@ pub fn writeConfigFile(
     try file.writeAll(payload);
 }
 
+pub const DirStatus = union(enum) {
+    ok,
+    failed: anyerror,
+};
+
+pub const CreateDirsResult = struct {
+    logical_root: DirStatus,
+    roots: []DirStatus, // one per configured root, caller must free
+
+    pub fn deinit(self: CreateDirsResult, allocator: std.mem.Allocator) void {
+        allocator.free(self.roots);
+    }
+};
+
+pub fn createRequiredDirectories(
+    allocator: std.mem.Allocator,
+    config: cfg.Config,
+) !CreateDirsResult {
+    const logical_root_status: DirStatus = if (std.fs.cwd().makePath(config.logical_root)) |_|
+        .ok
+    else |err|
+        .{ .failed = err };
+
+    const roots_statuses = try allocator.alloc(DirStatus, config.roots.len);
+    for (config.roots, 0..) |root, i| {
+        roots_statuses[i] = if (std.fs.cwd().makePath(root.root_path)) |_|
+            .ok
+        else |err|
+            .{ .failed = err };
+    }
+
+    return .{
+        .logical_root = logical_root_status,
+        .roots = roots_statuses,
+    };
+}
+
 fn openConfigFile(file_path: []const u8, force: bool) !std.fs.File {
     if (std.fs.path.isAbsolute(file_path)) {
         return std.fs.createFileAbsolute(file_path, .{
@@ -130,6 +167,98 @@ test "refuse overwrite without force" {
 
     try writeConfigFile(std.testing.allocator, config_path, config, false);
     try std.testing.expectError(error.ConfigAlreadyExists, writeConfigFile(std.testing.allocator, config_path, config, false));
+}
+
+test "createRequiredDirectories succeeds for fresh tmp directories" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    const logical_root = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "logical" });
+    defer std.testing.allocator.free(logical_root);
+
+    const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw", "disk-a" });
+    defer std.testing.allocator.free(root_path);
+
+    const config = try buildConfig(.{
+        .logical_root = logical_root,
+        .roots = &.{
+            .{ .root_path = root_path, .shortname = "disk-0" },
+        },
+    });
+
+    const result = try createRequiredDirectories(std.testing.allocator, config);
+    defer result.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(DirStatus.ok, result.logical_root);
+    try std.testing.expectEqual(@as(usize, 1), result.roots.len);
+    try std.testing.expectEqual(DirStatus.ok, result.roots[0]);
+}
+
+test "createRequiredDirectories ok when directories already exist" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    const logical_root = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "logical" });
+    defer std.testing.allocator.free(logical_root);
+
+    const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw", "disk-a" });
+    defer std.testing.allocator.free(root_path);
+
+    // Create the directories first so they already exist
+    try std.fs.cwd().makePath(logical_root);
+    try std.fs.cwd().makePath(root_path);
+
+    const config = try buildConfig(.{
+        .logical_root = logical_root,
+        .roots = &.{
+            .{ .root_path = root_path, .shortname = "disk-0" },
+        },
+    });
+
+    const result = try createRequiredDirectories(std.testing.allocator, config);
+    defer result.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(DirStatus.ok, result.logical_root);
+    try std.testing.expectEqual(DirStatus.ok, result.roots[0]);
+}
+
+test "createRequiredDirectories returns failed when path is a file" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    const logical_root = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "logical" });
+    defer std.testing.allocator.free(logical_root);
+
+    const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw-disk" });
+    defer std.testing.allocator.free(root_path);
+
+    // Place a file at root_path so makePath fails (file where a dir is expected)
+    const file = try std.fs.createFileAbsolute(root_path, .{});
+    file.close();
+
+    const config = try buildConfig(.{
+        .logical_root = logical_root,
+        .roots = &.{
+            .{ .root_path = root_path, .shortname = "disk-0" },
+        },
+    });
+
+    const result = try createRequiredDirectories(std.testing.allocator, config);
+    defer result.deinit(std.testing.allocator);
+
+    // logical_root should succeed
+    try std.testing.expectEqual(DirStatus.ok, result.logical_root);
+    // root_path should fail because a file exists there
+    try std.testing.expect(result.roots[0] == .failed);
 }
 
 test "allow overwrite with force" {

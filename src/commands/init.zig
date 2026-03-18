@@ -31,6 +31,28 @@ pub fn run(allocator: std.mem.Allocator, args: Args, config_override: ?[]const u
 
     try init_lib.writeConfigFile(allocator, config_path, built, args.force);
     try writer.interface.print("wrote config to {s}\n", .{config_path});
+
+    const dirs_result = try init_lib.createRequiredDirectories(allocator, built);
+    defer dirs_result.deinit(allocator);
+
+    switch (dirs_result.logical_root) {
+        .ok => try writer.interface.print("created {s}\n", .{built.logical_root}),
+        .failed => |err| try writer.interface.print(
+            "warning: could not create {s}: {s} (create it manually)\n",
+            .{ built.logical_root, @errorName(err) },
+        ),
+    }
+
+    for (built.roots, dirs_result.roots) |root, status| {
+        switch (status) {
+            .ok => try writer.interface.print("created {s}\n", .{root.root_path}),
+            .failed => |err| try writer.interface.print(
+                "warning: could not create {s}: {s} (create it manually)\n",
+                .{ root.root_path, @errorName(err) },
+            ),
+        }
+    }
+
     try writer.interface.flush();
 }
 
