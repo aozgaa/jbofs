@@ -8,7 +8,7 @@ This document tracks likely follow-up work for `jbofs`. These are ideas and open
 - [x] remove on-filesystem aliases if better lookup helpers make them unnecessary
 - [x] `init` loop for roots: physical root paths should be checked for existence and the “creation” should fail/re-ask
   to create another entry if they don’t exist
-- [ ] `init` creates all required directories, including the logical root, with a clear privilege model: `init` runs as
+- [x] `init` creates all required directories, including the logical root, with a clear privilege model: `init` runs as
   the invoking user (so config is written to the correct user path); directories that fail with `PermissionDenied`
   should be retried via `sudo install -d -o <user> -g <group> -m 755 <path>` so the directory is created and immediately
   owned by the invoking user, not root; uid/gid obtained via syscalls; a setuid helper binary was considered and
