@@ -42,6 +42,15 @@ pub fn rootPromptFields() RootPromptFields {
     return .{};
 }
 
+pub fn validateRootPath(path: []const u8) !void {
+    if (!std.fs.path.isAbsolute(path)) return error.RootPathMustBeAbsolute;
+    var dir = std.fs.openDirAbsolute(path, .{}) catch |err| switch (err) {
+        error.FileNotFound, error.NotDir => return error.RootPathDoesNotExist,
+        else => return err,
+    };
+    dir.close();
+}
+
 fn promptForConfig(
     allocator: std.mem.Allocator,
     writer: *std.Io.Writer,
@@ -76,7 +85,17 @@ fn promptForConfig(
         defer allocator.free(default_shortname);
 
         const prompt_fields = rootPromptFields();
-        const root_path = try promptRequired(allocator, writer, prompt_fields.root_path_label);
+        const root_path = blk: while (true) {
+            const candidate = try promptRequired(allocator, writer, prompt_fields.root_path_label);
+            if (validateRootPath(candidate)) |_| {
+                break :blk candidate;
+            } else |_| {
+                try writer.print("{s}: directory does not exist\n", .{candidate});
+                try writer.flush();
+                allocator.free(candidate);
+            }
+        };
+
         const shortname = try promptWithDefault(allocator, writer, prompt_fields.shortname_label, default_shortname);
 
         try roots.append(allocator, .{
@@ -211,4 +230,37 @@ test "root prompt fields omit alias" {
     const fields = rootPromptFields();
     try std.testing.expectEqualStrings("root path", fields.root_path_label);
     try std.testing.expectEqualStrings("shortname", fields.shortname_label);
+}
+
+fn tmpDirPath(allocator: std.mem.Allocator, tmp_dir: *std.testing.TmpDir) ![]u8 {
+    const relative = try std.fs.path.join(allocator, &.{ ".zig-cache", "tmp", tmp_dir.sub_path[0..] });
+    defer allocator.free(relative);
+    return std.fs.cwd().realpathAlloc(allocator, relative);
+}
+
+test "validateRootPath accepts existing directory" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    try validateRootPath(tmp_root);
+}
+
+test "validateRootPath rejects non-existent path" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    const missing = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "does-not-exist" });
+    defer std.testing.allocator.free(missing);
+
+    try std.testing.expectError(error.RootPathDoesNotExist, validateRootPath(missing));
+}
+
+test "validateRootPath rejects relative path" {
+    try std.testing.expectError(error.RootPathMustBeAbsolute, validateRootPath("relative/path"));
 }
