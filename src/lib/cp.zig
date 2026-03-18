@@ -355,3 +355,155 @@ test "cp rejects existing destination" {
     _ = try copyManagedFile(std.testing.allocator, config, source_path, "media/file.txt", .{});
     try std.testing.expectError(error.DestinationAlreadyExists, copyManagedFile(std.testing.allocator, config, source_path, "media/file.txt", .{}));
 }
+
+test "cp rejects directory source" {
+    // Opening a directory with openFileAbsolute in read-only mode succeeds on Linux,
+    // so the code reaches stat(), which returns .directory, triggering error.InvalidSourceType.
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+    const config = owned.config;
+
+    const dir_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "subdir" });
+    defer std.testing.allocator.free(dir_path);
+    try std.fs.cwd().makePath(dir_path);
+
+    try std.testing.expectError(error.InvalidSourceType, copyManagedFile(std.testing.allocator, config, dir_path, "test/dir", .{}));
+}
+
+test "cp follows symlink source" {
+    // openFileAbsolute follows symlinks automatically on Linux; stat() returns the
+    // target's kind (.file), so the copy proceeds and produces the target's content.
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+    const config = owned.config;
+
+    const source_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "source.txt" });
+    defer std.testing.allocator.free(source_path);
+    const link_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "source_link.txt" });
+    defer std.testing.allocator.free(link_path);
+
+    {
+        var source = try std.fs.createFileAbsolute(source_path, .{});
+        defer source.close();
+        try source.writeAll("hello via symlink");
+    }
+
+    try std.fs.symLinkAbsolute(source_path, link_path, .{});
+
+    _ = try copyManagedFile(std.testing.allocator, config, link_path, "test/via_link.txt", .{});
+
+    const physical = try std.fs.path.join(std.testing.allocator, &.{ config.roots[0].root_path, "test", "via_link.txt" });
+    defer std.testing.allocator.free(physical);
+    const logical = try std.fs.path.join(std.testing.allocator, &.{ config.logical_root, "test", "via_link.txt" });
+    defer std.testing.allocator.free(logical);
+
+    // Physical file should contain the source content.
+    const content = try std.fs.cwd().readFileAlloc(std.testing.allocator, physical, 1024);
+    defer std.testing.allocator.free(content);
+    try std.testing.expectEqualStrings("hello via symlink", content);
+
+    // Logical path should be a symlink pointing at the physical file.
+    try std.testing.expect(try pathExists(logical));
+}
+
+fn fifoWriterFn(path: []const u8) void {
+    const f = std.fs.openFileAbsolute(path, .{ .mode = .write_only }) catch return;
+    defer f.close();
+    f.writeAll("pipe data") catch {};
+}
+
+test "cp copies named pipe source" {
+    // Named pipes (.named_pipe) are explicitly allowed by the source-type check.
+    // A writer thread is needed because opening a FIFO for reading blocks until
+    // a writer opens the other end.
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+    const config = owned.config;
+
+    const fifo_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "source.fifo" });
+    defer std.testing.allocator.free(fifo_path);
+
+    const posix_fifo = try std.posix.toPosixPath(fifo_path);
+    const fifo_mode: u32 = std.os.linux.S.IFIFO | 0o644;
+    const mknod_ret = std.os.linux.mknod(&posix_fifo, fifo_mode, 0);
+    try std.testing.expectEqual(@as(usize, 0), mknod_ret);
+
+    const thread = try std.Thread.spawn(.{}, fifoWriterFn, .{fifo_path});
+    _ = try copyManagedFile(std.testing.allocator, config, fifo_path, "test/pipe.txt", .{});
+    thread.join();
+
+    const physical = try std.fs.path.join(std.testing.allocator, &.{ config.roots[0].root_path, "test", "pipe.txt" });
+    defer std.testing.allocator.free(physical);
+    const logical = try std.fs.path.join(std.testing.allocator, &.{ config.logical_root, "test", "pipe.txt" });
+    defer std.testing.allocator.free(logical);
+
+    const content = try std.fs.cwd().readFileAlloc(std.testing.allocator, physical, 1024);
+    defer std.testing.allocator.free(content);
+    try std.testing.expectEqualStrings("pipe data", content);
+
+    try std.testing.expect(try pathExists(logical));
+}
+
+test "cp rejects character device source" {
+    // /dev/null is a character device always available without root access.
+    // openFileAbsolute succeeds and stat() returns .character_device, so
+    // copyManagedFile returns error.InvalidSourceType.
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+    const config = owned.config;
+
+    try std.testing.expectError(error.InvalidSourceType, copyManagedFile(std.testing.allocator, config, "/dev/null", "test/chardev", .{}));
+}
+
+test "cp rejects unix domain socket source" {
+    // Opening a Unix domain socket path with openFileAbsolute returns error.NoDevice
+    // on Linux (ENXIO), which propagates before we reach the stat() kind check.
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+    const config = owned.config;
+
+    const sock_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "test.sock" });
+    defer std.testing.allocator.free(sock_path);
+
+    const sock = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.DGRAM, 0);
+    defer std.posix.close(sock);
+
+    var addr: std.posix.sockaddr.un = undefined;
+    addr.family = std.posix.AF.UNIX;
+    @memset(&addr.path, 0);
+    @memcpy(addr.path[0..sock_path.len], sock_path);
+    try std.posix.bind(sock, @ptrCast(&addr), @sizeOf(std.posix.sockaddr.un));
+
+    // On Linux, opening a socket path returns error.NoDevice (ENXIO).
+    try std.testing.expectError(error.NoDevice, copyManagedFile(std.testing.allocator, config, sock_path, "test/sock", .{}));
+}

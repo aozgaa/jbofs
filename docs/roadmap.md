@@ -21,14 +21,14 @@ This document tracks likely follow-up work for `jbofs`. These are ideas and open
 
 ## Test Coverage
 
-- [ ] expand `cp` testing for more source file kinds in a controlled environment
-- [ ] test block devices
-- [ ] test character devices
-- [ ] test sockets
-- [ ] test symlink sources and decide whether to follow them
-- [ ] test directories
+- [x] expand `cp` testing for more source file kinds in a controlled environment
+- [ ] test block devices (skipped: requires root or loop device setup)
+- [x] test character devices
+- [x] test sockets
+- [x] test symlink sources and decide whether to follow them
+- [x] test directories
 - [x] test regular files
-- [ ] test FIFOs
+- [x] test FIFOs
 
 ## Future Evaluation
 
