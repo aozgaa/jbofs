@@ -50,10 +50,10 @@ pub const DirStatus = union(enum) {
 
 pub const CreateDirsResult = struct {
     logical_root: DirStatus,
-    roots: []DirStatus, // one per configured root, caller must free
 
     pub fn deinit(self: CreateDirsResult, allocator: std.mem.Allocator) void {
-        allocator.free(self.roots);
+        _ = self;
+        _ = allocator;
     }
 };
 
@@ -108,16 +108,20 @@ pub fn createRequiredDirectoriesWithSudo(
     gid: std.posix.gid_t,
     sudo_fn: SudoFn,
 ) !CreateDirsResult {
-    const logical_root_status = makeDirWithFallback(allocator, config.logical_root, uid, gid, sudo_fn);
-
-    const roots_statuses = try allocator.alloc(DirStatus, config.roots.len);
-    for (config.roots, 0..) |root, i| {
-        roots_statuses[i] = makeDirWithFallback(allocator, root.root_path, uid, gid, sudo_fn);
+    // Physical roots are pre-existing mounted drives; never create them.
+    // Verify each one is present and is a directory.
+    for (config.roots) |root| {
+        var dir = std.fs.openDirAbsolute(root.root_path, .{}) catch |err| switch (err) {
+            error.FileNotFound, error.NotDir => return error.RootPathDoesNotExist,
+            else => return err,
+        };
+        dir.close();
     }
+
+    const logical_root_status = makeDirWithFallback(allocator, config.logical_root, uid, gid, sudo_fn);
 
     return .{
         .logical_root = logical_root_status,
-        .roots = roots_statuses,
     };
 }
 
@@ -230,7 +234,7 @@ test "refuse overwrite without force" {
     try std.testing.expectError(error.ConfigAlreadyExists, writeConfigFile(std.testing.allocator, config_path, config, false));
 }
 
-test "createRequiredDirectories succeeds for fresh tmp directories" {
+test "createRequiredDirectories creates logical root and accepts existing physical roots" {
     var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
@@ -240,8 +244,10 @@ test "createRequiredDirectories succeeds for fresh tmp directories" {
     const logical_root = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "logical" });
     defer std.testing.allocator.free(logical_root);
 
+    // Physical root must already exist (pre-existing mounted drive).
     const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw", "disk-a" });
     defer std.testing.allocator.free(root_path);
+    try std.fs.cwd().makePath(root_path);
 
     const config = try buildConfig(.{
         .logical_root = logical_root,
@@ -254,11 +260,9 @@ test "createRequiredDirectories succeeds for fresh tmp directories" {
     defer result.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(DirStatus.ok, result.logical_root);
-    try std.testing.expectEqual(@as(usize, 1), result.roots.len);
-    try std.testing.expectEqual(DirStatus.ok, result.roots[0]);
 }
 
-test "createRequiredDirectories ok when directories already exist" {
+test "createRequiredDirectories logical_root ok when it already exists" {
     var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
@@ -271,7 +275,7 @@ test "createRequiredDirectories ok when directories already exist" {
     const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw", "disk-a" });
     defer std.testing.allocator.free(root_path);
 
-    // Create the directories first so they already exist
+    // Both exist beforehand.
     try std.fs.cwd().makePath(logical_root);
     try std.fs.cwd().makePath(root_path);
 
@@ -286,10 +290,9 @@ test "createRequiredDirectories ok when directories already exist" {
     defer result.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(DirStatus.ok, result.logical_root);
-    try std.testing.expectEqual(DirStatus.ok, result.roots[0]);
 }
 
-test "createRequiredDirectories returns failed when path is a file" {
+test "createRequiredDirectories returns error when a root_path is missing" {
     var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
 
@@ -299,12 +302,39 @@ test "createRequiredDirectories returns failed when path is a file" {
     const logical_root = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "logical" });
     defer std.testing.allocator.free(logical_root);
 
-    const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw-disk" });
+    // root_path intentionally NOT created.
+    const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw", "disk-a" });
     defer std.testing.allocator.free(root_path);
 
-    // Place a file at root_path so makePath fails (file where a dir is expected)
-    const file = try std.fs.createFileAbsolute(root_path, .{});
-    file.close();
+    const config = try buildConfig(.{
+        .logical_root = logical_root,
+        .roots = &.{
+            .{ .root_path = root_path, .shortname = "disk-0" },
+        },
+    });
+
+    try std.testing.expectError(
+        error.RootPathDoesNotExist,
+        createRequiredDirectories(std.testing.allocator, config, std.posix.getuid(), std.os.linux.getgid()),
+    );
+}
+
+test "createRequiredDirectories returns failed when logical_root path is a file" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    // Place a file where logical_root should be so makePath fails.
+    const logical_root = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "logical-file" });
+    defer std.testing.allocator.free(logical_root);
+    const blocker = try std.fs.createFileAbsolute(logical_root, .{});
+    blocker.close();
+
+    const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw", "disk-a" });
+    defer std.testing.allocator.free(root_path);
+    try std.fs.cwd().makePath(root_path);
 
     const config = try buildConfig(.{
         .logical_root = logical_root,
@@ -316,15 +346,11 @@ test "createRequiredDirectories returns failed when path is a file" {
     const result = try createRequiredDirectories(std.testing.allocator, config, std.posix.getuid(), std.os.linux.getgid());
     defer result.deinit(std.testing.allocator);
 
-    // logical_root should succeed
-    try std.testing.expectEqual(DirStatus.ok, result.logical_root);
-    // root_path should fail because a file exists there
-    try std.testing.expect(result.roots[0] == .failed);
+    try std.testing.expect(result.logical_root == .failed);
 }
 
-test "createRequiredDirectoriesWithSudo uses injected sudo_fn on success" {
-    // Verify that when makePath succeeds normally, the result is .ok even when a
-    // custom sudo_fn is provided (the sudo_fn must not be called on success).
+test "createRequiredDirectoriesWithSudo does not call sudo_fn when makePath succeeds" {
+    // Verify that the sudo_fn is not invoked when makePath succeeds normally.
     const neverCalledSudo = struct {
         fn call(
             alloc: std.mem.Allocator,
@@ -351,6 +377,7 @@ test "createRequiredDirectoriesWithSudo uses injected sudo_fn on success" {
 
     const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw", "disk-a" });
     defer std.testing.allocator.free(root_path);
+    try std.fs.cwd().makePath(root_path);
 
     const config = try buildConfig(.{
         .logical_root = logical_root,
@@ -366,11 +393,10 @@ test "createRequiredDirectoriesWithSudo uses injected sudo_fn on success" {
     );
     defer result.deinit(std.testing.allocator);
     try std.testing.expectEqual(DirStatus.ok, result.logical_root);
-    try std.testing.expectEqual(DirStatus.ok, result.roots[0]);
 }
 
-test "createRequiredDirectoriesWithSudo returns failed on non-AccessDenied error" {
-    // Verify the error path: non-AccessDenied makePath failure -> .failed (sudo not invoked).
+test "createRequiredDirectoriesWithSudo returns failed for non-AccessDenied logical_root error" {
+    // Verify: non-AccessDenied error on logical_root -> .failed; sudo not invoked.
     const neverCalledSudo = struct {
         fn call(
             alloc: std.mem.Allocator,
@@ -392,18 +418,18 @@ test "createRequiredDirectoriesWithSudo returns failed on non-AccessDenied error
     const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
     defer std.testing.allocator.free(tmp_root);
 
-    const target = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "blocker" });
-    defer std.testing.allocator.free(target);
-
-    // Place a file at target so makePath returns NotDir, not AccessDenied.
-    const f = try std.fs.createFileAbsolute(target, .{});
+    // Place a file where logical_root should be so makePath returns NotDir, not AccessDenied.
+    const logical_root = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "blocker" });
+    defer std.testing.allocator.free(logical_root);
+    const f = try std.fs.createFileAbsolute(logical_root, .{});
     f.close();
 
     const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw", "disk-a" });
     defer std.testing.allocator.free(root_path);
+    try std.fs.cwd().makePath(root_path);
 
     const config = try buildConfig(.{
-        .logical_root = target,
+        .logical_root = logical_root,
         .roots = &.{.{ .root_path = root_path, .shortname = "disk-0" }},
     });
 
