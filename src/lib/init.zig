@@ -44,6 +44,7 @@ pub fn writeConfigFile(
 
 pub const DirStatus = union(enum) {
     ok,
+    created_with_sudo,
     failed: anyerror,
 };
 
@@ -56,27 +57,87 @@ pub const CreateDirsResult = struct {
     }
 };
 
+/// Function type for the sudo-escalation retry.  Injected so tests can
+/// replace the real implementation without actually spawning sudo.
+pub const SudoFn = *const fn (
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    uid: std.posix.uid_t,
+    gid: std.posix.gid_t,
+) anyerror!void;
+
+/// Default implementation: spawns `sudo install -d -o <uid> -g <gid> -m 755 <path>`.
+pub fn defaultSudoInstall(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    uid: std.posix.uid_t,
+    gid: std.posix.gid_t,
+) !void {
+    const uid_str = try std.fmt.allocPrint(allocator, "{d}", .{uid});
+    defer allocator.free(uid_str);
+    const gid_str = try std.fmt.allocPrint(allocator, "{d}", .{gid});
+    defer allocator.free(gid_str);
+
+    var child = std.process.Child.init(
+        &.{ "sudo", "install", "-d", "-o", uid_str, "-g", gid_str, "-m", "755", path },
+        allocator,
+    );
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Inherit;
+    try child.spawn();
+    const term = try child.wait();
+    switch (term) {
+        .Exited => |code| if (code != 0) return error.SudoInstallFailed,
+        else => return error.SudoInstallFailed,
+    }
+}
+
 pub fn createRequiredDirectories(
     allocator: std.mem.Allocator,
     config: cfg.Config,
+    uid: std.posix.uid_t,
+    gid: std.posix.gid_t,
 ) !CreateDirsResult {
-    const logical_root_status: DirStatus = if (std.fs.cwd().makePath(config.logical_root)) |_|
-        .ok
-    else |err|
-        .{ .failed = err };
+    return createRequiredDirectoriesWithSudo(allocator, config, uid, gid, defaultSudoInstall);
+}
+
+pub fn createRequiredDirectoriesWithSudo(
+    allocator: std.mem.Allocator,
+    config: cfg.Config,
+    uid: std.posix.uid_t,
+    gid: std.posix.gid_t,
+    sudo_fn: SudoFn,
+) !CreateDirsResult {
+    const logical_root_status = makeDirWithFallback(allocator, config.logical_root, uid, gid, sudo_fn);
 
     const roots_statuses = try allocator.alloc(DirStatus, config.roots.len);
     for (config.roots, 0..) |root, i| {
-        roots_statuses[i] = if (std.fs.cwd().makePath(root.root_path)) |_|
-            .ok
-        else |err|
-            .{ .failed = err };
+        roots_statuses[i] = makeDirWithFallback(allocator, root.root_path, uid, gid, sudo_fn);
     }
 
     return .{
         .logical_root = logical_root_status,
         .roots = roots_statuses,
     };
+}
+
+fn makeDirWithFallback(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    uid: std.posix.uid_t,
+    gid: std.posix.gid_t,
+    sudo_fn: SudoFn,
+) DirStatus {
+    std.fs.cwd().makePath(path) catch |err| switch (err) {
+        error.AccessDenied => {
+            sudo_fn(allocator, path, uid, gid) catch {
+                return .{ .failed = err };
+            };
+            return .created_with_sudo;
+        },
+        else => return .{ .failed = err },
+    };
+    return .ok;
 }
 
 fn openConfigFile(file_path: []const u8, force: bool) !std.fs.File {
@@ -189,7 +250,7 @@ test "createRequiredDirectories succeeds for fresh tmp directories" {
         },
     });
 
-    const result = try createRequiredDirectories(std.testing.allocator, config);
+    const result = try createRequiredDirectories(std.testing.allocator, config, std.posix.getuid(), std.os.linux.getgid());
     defer result.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(DirStatus.ok, result.logical_root);
@@ -221,7 +282,7 @@ test "createRequiredDirectories ok when directories already exist" {
         },
     });
 
-    const result = try createRequiredDirectories(std.testing.allocator, config);
+    const result = try createRequiredDirectories(std.testing.allocator, config, std.posix.getuid(), std.os.linux.getgid());
     defer result.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(DirStatus.ok, result.logical_root);
@@ -252,13 +313,109 @@ test "createRequiredDirectories returns failed when path is a file" {
         },
     });
 
-    const result = try createRequiredDirectories(std.testing.allocator, config);
+    const result = try createRequiredDirectories(std.testing.allocator, config, std.posix.getuid(), std.os.linux.getgid());
     defer result.deinit(std.testing.allocator);
 
     // logical_root should succeed
     try std.testing.expectEqual(DirStatus.ok, result.logical_root);
     // root_path should fail because a file exists there
     try std.testing.expect(result.roots[0] == .failed);
+}
+
+test "createRequiredDirectoriesWithSudo uses injected sudo_fn on success" {
+    // Verify that when makePath succeeds normally, the result is .ok even when a
+    // custom sudo_fn is provided (the sudo_fn must not be called on success).
+    const neverCalledSudo = struct {
+        fn call(
+            alloc: std.mem.Allocator,
+            path: []const u8,
+            uid: std.posix.uid_t,
+            gid: std.posix.gid_t,
+        ) anyerror!void {
+            _ = alloc;
+            _ = path;
+            _ = uid;
+            _ = gid;
+            return error.SudoShouldNotHaveBeenCalled;
+        }
+    }.call;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    const logical_root = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "logical" });
+    defer std.testing.allocator.free(logical_root);
+
+    const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw", "disk-a" });
+    defer std.testing.allocator.free(root_path);
+
+    const config = try buildConfig(.{
+        .logical_root = logical_root,
+        .roots = &.{.{ .root_path = root_path, .shortname = "disk-0" }},
+    });
+
+    const result = try createRequiredDirectoriesWithSudo(
+        std.testing.allocator,
+        config,
+        std.posix.getuid(),
+        std.os.linux.getgid(),
+        neverCalledSudo,
+    );
+    defer result.deinit(std.testing.allocator);
+    try std.testing.expectEqual(DirStatus.ok, result.logical_root);
+    try std.testing.expectEqual(DirStatus.ok, result.roots[0]);
+}
+
+test "createRequiredDirectoriesWithSudo returns failed on non-AccessDenied error" {
+    // Verify the error path: non-AccessDenied makePath failure -> .failed (sudo not invoked).
+    const neverCalledSudo = struct {
+        fn call(
+            alloc: std.mem.Allocator,
+            path: []const u8,
+            uid: std.posix.uid_t,
+            gid: std.posix.gid_t,
+        ) anyerror!void {
+            _ = alloc;
+            _ = path;
+            _ = uid;
+            _ = gid;
+            return error.SudoShouldNotHaveBeenCalled;
+        }
+    }.call;
+
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+
+    const target = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "blocker" });
+    defer std.testing.allocator.free(target);
+
+    // Place a file at target so makePath returns NotDir, not AccessDenied.
+    const f = try std.fs.createFileAbsolute(target, .{});
+    f.close();
+
+    const root_path = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "raw", "disk-a" });
+    defer std.testing.allocator.free(root_path);
+
+    const config = try buildConfig(.{
+        .logical_root = target,
+        .roots = &.{.{ .root_path = root_path, .shortname = "disk-0" }},
+    });
+
+    const result = try createRequiredDirectoriesWithSudo(
+        std.testing.allocator,
+        config,
+        std.posix.getuid(),
+        std.os.linux.getgid(),
+        neverCalledSudo,
+    );
+    defer result.deinit(std.testing.allocator);
+    try std.testing.expect(result.logical_root == .failed);
 }
 
 test "allow overwrite with force" {
