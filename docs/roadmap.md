@@ -9,6 +9,9 @@ This document tracks likely follow-up work for `jbofs`. These are ideas and open
 - [ ] `init` loop for roots: physical root paths should be checked for existence and the “creation” should fail/re-ask
   to create another entry if they don’t exist
 - [ ] `init` creates all required directories, including the logical root, with a clear privilege model
+- [ ] `init` should support path completions/tabbing
+- [ ] there should be some kind of programmtic driven init instead of interactive (eg: cli options) maybe the config
+  format is simple enough this isn’t necessary?
 
 ## Copy Semantics
 
