@@ -1,6 +1,6 @@
 # Design
 
-`jbofs` is a "just bunch of file systems" workflow, not a new filesystem.
+`jbofs` is a “just bunch of file systems” workflow, not a new filesystem.
 It manages a set of independent physical roots plus a separate logical tree of symlinks.
 
 ## Core Model
@@ -28,7 +28,8 @@ logical link:  /srv/jbofs/logical/media/movie.mkv
 3. Copies the source file into that root
 4. Creates a symlink at `logical_root/<logical-path>` pointing at the physical file
 
-Destination conflicts are rejected. `jbofs` does not overwrite an existing logical path.
+Destination conflicts are rejected.
+`jbofs` does not overwrite an existing logical path.
 
 ## Placement Model
 
@@ -37,7 +38,7 @@ Placement is intentionally simple.
 - `--disk <NAME>` writes to a specific configured root by shortname
 - `--policy first` uses the first configured root
 - `--policy most-free` chooses the root with the most available space
-- if neither flag is provided, the config's `placement.default_policy` is used
+- if neither flag is provided, the config’s `placement.default_policy` is used
 
 There is no background rebalance, migration, or pooled allocator.
 
@@ -60,9 +61,12 @@ Repair is split into two commands:
 - `jbofs sync` scans every configured physical root and creates missing logical symlinks
 - `jbofs prune` scans `logical_root` and removes broken symlinks
 
-`jbofs sync` is additive. It does not overwrite conflicts. If a logical path already exists and points somewhere else, it is counted as a conflict and left unchanged.
+`jbofs sync` is additive.
+It does not overwrite conflicts.
+If a logical path already exists and points somewhere else, it is counted as a conflict and left unchanged.
 
-`jbofs prune` is destructive only with respect to dead symlinks. It never deletes physical data.
+`jbofs prune` is destructive only with respect to dead symlinks.
+It never deletes physical data.
 
 ## Path Semantics
 
@@ -75,7 +79,8 @@ Logical paths must not contain empty components, `.` or `..`.
 
 Physical roots must be absolute paths in the config.
 
-The current commands consult `root_path` and `shortname`. `jbofs query root-for-shortname` is the lookup helper for mapping a configured shortname back to its physical root.
+The current commands consult `root_path` and `shortname`. `jbofs query root-for-shortname` is the lookup helper for
+mapping a configured shortname back to its physical root.
 
 ## Non-Goals
 

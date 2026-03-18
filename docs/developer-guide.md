@@ -83,7 +83,8 @@ zig build run -- cp --help
 
 ## Testing Style
 
-Most behavior is tested at the library layer with temporary directories. The tests exercise:
+Most behavior is tested at the library layer with temporary directories.
+The tests exercise:
 
 - config validation and config-path precedence
 - path normalization and root containment

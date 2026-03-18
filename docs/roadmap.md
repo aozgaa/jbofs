@@ -6,7 +6,8 @@ This document tracks likely follow-up work for `jbofs`. These are ideas and open
 
 - [x] add query helpers for config lookups such as shortname-to-root mapping
 - [x] remove on-filesystem aliases if better lookup helpers make them unnecessary
-- [ ] `init` loop for roots: physical root paths should be checked for existence and the "creation" should fail/re-ask to create another entry if they don't exist
+- [ ] `init` loop for roots: physical root paths should be checked for existence and the “creation” should fail/re-ask
+  to create another entry if they don’t exist
 - [ ] `init` creates all required directories, including the logical root, with a clear privilege model
 
 ## Copy Semantics

@@ -5,7 +5,7 @@ Purpose: isolate why only one NVMe device is enumerating in Linux.
 Current known state:
 - Linux sees only `/dev/nvme0n1` (boot disk).
 - This indicates likely BIOS/slot/adapter/hardware enumeration issue, not mount/filesystem issue.
-This checklist is historical operational context and does not define the current `jbofs` design.
+  This checklist is historical operational context and does not define the current `jbofs` design.
 
 ## Rules
 
@@ -15,14 +15,14 @@ This checklist is historical operational context and does not define the current
 
 ## Quick Log Template (copy per reboot)
 
-- Reboot #: 
-- Hardware change made: 
-- BIOS change made: 
-- Expected result: 
-- Actual result: 
-- Next action: 
+- Reboot #:
+- Hardware change made:
+- BIOS change made:
+- Expected result:
+- Actual result:
+- Next action:
 
----
+* * *
 
 ## Step 0: Baseline Snapshot (before changing anything)
 
@@ -38,7 +38,7 @@ lspci -tv
 lsblk -d -o NAME,MODEL,SIZE,TYPE
 ```
 
----
+* * *
 
 ## Step 1: Minimal Hardware Topology (Power Off)
 
@@ -51,7 +51,7 @@ Set machine to minimal test setup:
 
 Goal: reduce variables and confirm basic enumeration first.
 
----
+* * *
 
 ## Step 2: BIOS Configuration (for that exact slot)
 
@@ -66,7 +66,7 @@ Also recommended:
 
 Save and reboot.
 
----
+* * *
 
 ## Step 3: Post-Reboot Verification Command Set
 
@@ -81,7 +81,7 @@ lspci -tv
 
 Expected when successful: at least one additional NVMe controller/device beyond boot drive appears.
 
----
+* * *
 
 ## Step 4: If No Additional NVMe Appears
 
@@ -97,7 +97,7 @@ After each change:
 - Ensure slot bifurcation is still `x4x4x4x4`.
 - Ensure slot speed is still `Gen4`.
 
----
+* * *
 
 ## Step 5: Scale-Up After Single-Drive Success
 
@@ -115,7 +115,7 @@ Then, if using second adapter:
    - speed `Gen4`
 3. Reboot and verify.
 
----
+* * *
 
 ## Step 6: Reintroduce Extra GPU Last
 
@@ -125,7 +125,7 @@ If you removed a GPU for isolation:
 2. Reboot and re-run Step 3 commands.
 3. Confirm NVMe count does not drop.
 
----
+* * *
 
 ## Step 7: Final Linux Validation (when all drives visible)
 
@@ -144,7 +144,7 @@ Optional detailed PCI links:
 lspci -vv | grep -E '^[0-9a-f]{2}:[0-9a-f]{2}\.[0-9]|LnkCap|LnkSta'
 ```
 
----
+* * *
 
 ## Common Failure Patterns
 
@@ -154,7 +154,7 @@ lspci -vv | grep -E '^[0-9a-f]{2}:[0-9a-f]{2}\.[0-9]|LnkCap|LnkSta'
 - Physical slot/cable/backplane path does not carry NVMe lanes.
 - Too many variables changed at once (hard to isolate root cause).
 
----
+* * *
 
 ## Safety Reminder
 

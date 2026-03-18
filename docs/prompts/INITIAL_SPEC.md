@@ -9,7 +9,8 @@
 3. Maintain logical symlinks that point at the real file locations.
 4. Provide a small set of repair and cleanup commands.
 
-This document is a cleanroom-oriented proposal for that smaller system. It also records where the Zig port drifted away from the core semantics present around commit `8ab6b28a96b206a`.
+This document is a cleanroom-oriented proposal for that smaller system.
+It also records where the Zig port drifted away from the core semantics present around commit `8ab6b28a96b206a`.
 
 ## What Changed Since `8ab6b28a96b206a`
 
@@ -20,7 +21,9 @@ The original repository already had two layers:
 - the core four verbs: `cp`, `rm`, `sync`, `prune`
 - a larger setup/inventory/provisioning workflow for preparing disks
 
-The Zig port preserved most of the complexity of the shell scripts, added a new CLI parser dependency, and surfaced some setup semantics directly in the compiled CLI. That moved the project away from "just bunch of file systems" and toward a larger storage-management tool.
+The Zig port preserved most of the complexity of the shell scripts, added a new CLI parser dependency, and surfaced some
+setup semantics directly in the compiled CLI. That moved the project away from “just bunch of file systems” and toward a
+larger storage-management tool.
 
 ### Concrete semantic drift
 
@@ -33,16 +36,19 @@ The Zig port preserved most of the complexity of the shell scripts, added a new 
    - This keeps behavior scattered across shell state instead of one persistent config file.
 
 3. `cp` still carries recursive/group-placement behavior.
-   - [src/cli/cp.zig](../../src/cli/cp.zig) includes `--recursive`, `--round-robin`, `--batch`, `--disk`, `--policy`, `--force`, and `--dry-run`.
+   - [src/cli/cp.zig](../../src/cli/cp.zig) includes `--recursive`, `--round-robin`, `--batch`, `--disk`, `--policy`,
+     `--force`, and `--dry-run`.
    - For the simplified model, recursive copy is unnecessary and placement should be easy to reason about.
 
 4. `rm` still supports multiple path-interpretation and deletion modes.
-   - [src/cli/rm.zig](../../src/cli/rm.zig) includes `--ensure-logical`, `--ensure-physical`, `--ensure-data`, `--rm-link`, `--rm-data`, `--rm-both`, and `--recursive`.
-   - This broadens `rm` from "remove one logical file and its data" into a more general garbage-collection tool.
+   - [src/cli/rm.zig](../../src/cli/rm.zig) includes `--ensure-logical`, `--ensure-physical`, `--ensure-data`,
+     `--rm-link`, `--rm-data`, `--rm-both`, and `--recursive`.
+   - This broadens `rm` from “remove one logical file and its data” into a more general garbage-collection tool.
 
 5. `sync` still exposes scan-source complexity.
    - [src/cli/sync.zig](../../src/cli/sync.zig) includes `--disk`, `--disk-path`, and `--logical-prefix`.
-   - The disk-path/stable-root logic is implementation-heavy for a command whose core job is just "recreate logical symlinks for data already on disk".
+   - The disk-path/stable-root logic is implementation-heavy for a command whose core job is just “recreate logical
+     symlinks for data already on disk”.
 
 6. `prune` is already close to the desired shape, but still inherits optional subtree filtering.
    - [src/cli/prune.zig](../../src/cli/prune.zig) includes `--logical-prefix`.
@@ -55,12 +61,15 @@ The Zig port preserved most of the complexity of the shell scripts, added a new 
    - These are valid tools in some environments, but they are orthogonal to the core `jbofs` data model.
 
 8. The port duplicated legacy semantics rather than using the rewrite as a simplification point.
-   - `clap` parsing, mode flags, and root-detection logic make the implementation longer without materially improving the core idea.
+   - `clap` parsing, mode flags, and root-detection logic make the implementation longer without materially improving
+     the core idea.
 
 ### Recommended direction
 
-Keep the old setup scripts outside the core specification. They may remain in the repository as separate operator utilities, but they should not define the core `jbofs` contract and should not shape the main CLI.
-The current implementation uses shortname-based lookup via a query helper and does not depend on on-filesystem aliases.
+Keep the old setup scripts outside the core specification.
+They may remain in the repository as separate operator utilities, but they should not define the core `jbofs` contract
+and should not shape the main CLI. The current implementation uses shortname-based lookup via a query helper and does
+not depend on on-filesystem aliases.
 
 The core CLI should be:
 
@@ -76,7 +85,8 @@ Nothing else is required by the base product.
 
 ### Concepts
 
-- `physical root`: one configured backing root for real file storage (conceptually, a filesystem mountpoint, but could be subdir)
+- `physical root`: one configured backing root for real file storage (conceptually, a filesystem mountpoint, but could
+  be subdir)
 - `physical file`: the real bytes stored under one physical root
 - `logical path`: the user-facing path under a logical root
 - `logical symlink`: a symlink under the logical root pointing at the physical file
@@ -168,7 +178,8 @@ For a logical relative path `photos/2024/img001.jpg`:
 - physical file path on `disk-1`:
   - `<roots["disk-1"].root_path>/photos/2024/img001.jpg`
 
-This simple "same relative path under both roots" mapping should be the only mapping rule in the cleanroom implementation.
+This simple “same relative path under both roots” mapping should be the only mapping rule in the cleanroom
+implementation.
 
 No additional metadata is required if this invariant holds.
 
@@ -196,16 +207,16 @@ jbofs init [--config PATH] [--force]
 
 ### Behavior
 
-2. If the target config  exists and `--force` is not given, fail.
+2. If the target config exists and `--force` is not given, fail.
 3. If it exists and `--force` is given, continue.
 4. Parent directories for the config file should be created as needed.
 5. ask the user interactively how they want jbofs setup:
-  1. logical dir (default /srv/jbofs/logical)
-  3. add a physical root? while true (at least once, else print error and retry):
-    1. ask for root path
-    2. ask for shortname (default disk-<N>)
-  4. ask for placement policy (`most-free|random`) (default `most-free`)
-6. serialize completed config to disk. (this step alone should be unit testable)
+6. logical dir (default /srv/jbofs/logical)
+7. add a physical root?
+   while true (at least once, else print error and retry): 1. ask for root path 2. ask for shortname (default disk-<N>)
+8. ask for placement policy (`most-free|random`) (default `most-free`)
+9. serialize completed config to disk.
+   (this step alone should be unit testable)
 
 ### Initial contents
 
@@ -223,8 +234,6 @@ The inital file should be well-formed, something like
   }
 }
 ```
-
-
 
 ## `jbofs cp`
 
@@ -272,7 +281,7 @@ Instead, cp should overwrite contents by default.
 ### Behavior
 
 1. Load config.
-2. Validate `SOURCE` is filetype we can "read()" from (eg; regular file, pipefd)
+2. Validate `SOURCE` is filetype we can “read()” from (eg; regular file, pipefd)
 3. Resolve the target physical root.
 4. Compute:
    - physical destination: `<root.root_path>/<LOGICAL_PATH>`
@@ -400,7 +409,9 @@ None.
 
 ### Deliberate simplifications
 
-1. No `--physical--prefix` or `--logical-prefix` options. Complicated and likely unnecessary. eg:
+1. No `--physical--prefix` or `--logical-prefix` options.
+   Complicated and likely unnecessary.
+   eg:
 ```
 - `PHYSICAL_PREFIX`
   - optional path to some physical subtree such as `/srv/jbofs/disk-1/photos/2024`

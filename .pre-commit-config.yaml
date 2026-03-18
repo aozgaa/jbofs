@@ -5,3 +5,10 @@ repos:
       - id: zig-fmt
       - id: zig-build
       - id: zig-build-test
+  - repo: local
+    hooks:
+      - id: flowmark
+        name: flowmark
+        entry: flowmark --auto
+        language: system
+        types_or: [markdown]

@@ -1,6 +1,7 @@
 # jbofs
 
-`jbofs` is a small CLI for managing files across multiple independent filesystem roots while exposing a separate logical namespace of symlinks.
+`jbofs` is a small CLI for managing files across multiple independent filesystem roots while exposing a separate logical
+namespace of symlinks.
 
 At a glance:
 
@@ -19,7 +20,8 @@ Current commands:
 - `jbofs prune`
 - `jbofs query root-for-shortname`
 
-`jbofs` is configured with a JSON file. By default it is loaded from:
+`jbofs` is configured with a JSON file.
+By default it is loaded from:
 
 - `$JBOFS_CONFIG_PATH`, if set
 - `$XDG_CONFIG_HOME/jbofs/fs_config.json`, if set

@@ -1,6 +1,7 @@
 # Setup Guide
 
-This guide covers setting up the current `jbofs` CLI. In this repository, setup means creating directories and writing a valid config file. Disk provisioning, formatting, and mounting are outside the scope of the tool.
+This guide covers setting up the current `jbofs` CLI. In this repository, setup means creating directories and writing a
+valid config file. Disk provisioning, formatting, and mounting are outside the scope of the tool.
 
 ## Prerequisites
 
@@ -43,7 +44,7 @@ The interactive prompts ask for:
 
 - `logical dir`
 - one or more physical roots
-- each root's shortname
+- each root’s shortname
 - default placement policy
 
 By default the config is written to `~/.config/jbofs/fs_config.json`. You can override that with either:
@@ -90,13 +91,16 @@ Current validation rules:
 - `shortname` values must be non-empty and unique
 - `root_path` values must be unique
 
-If you have an older config that still contains `alias` fields, regenerate it or edit those fields out before using this version.
+If you have an older config that still contains `alias` fields, regenerate it or edit those fields out before using this
+version.
 
-`jbofs query root-for-shortname <SHORTNAME>` resolves a configured shortname to the matching `root_path` when you need the physical location for a disk.
+`jbofs query root-for-shortname <SHORTNAME>` resolves a configured shortname to the matching `root_path` when you need
+the physical location for a disk.
 
 ## 4. Create the Logical Root if Needed
 
-`jbofs sync` and `jbofs cp` create intermediate subdirectories as needed, but the top-level physical and logical roots should already exist and be writable by the user running the command.
+`jbofs sync` and `jbofs cp` create intermediate subdirectories as needed, but the top-level physical and logical roots
+should already exist and be writable by the user running the command.
 
 Example:
 

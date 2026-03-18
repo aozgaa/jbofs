@@ -59,7 +59,8 @@ The main semantic questions are:
 - No integrated checksums or self-healing
 - No snapshots or replication
 - More operational discipline required than a single logical filesystem
-- Current implementation is intentionally narrow: no recursive copy/remove, no dry-run mode, no subtree-scoped sync/prune
+- Current implementation is intentionally narrow: no recursive copy/remove, no dry-run mode, no subtree-scoped
+  sync/prune
 
 ### Best fit
 
@@ -84,9 +85,13 @@ Source: <https://trapexit.github.io/mergerfs/latest/>
 
 ### Important semantics differences vs `jbofs`
 
-- `mergerfs` gives you a pooled namespace as the primary interface; `jbofs` gives you explicit physical paths plus a separate symlink namespace.
-- `mergerfs` must make policy choices at create/rename/link time; `jbofs` makes you choose placement explicitly or via the configured `first` / `most-free` policy at command invocation.
-- `mergerfs` can return `EXDEV` for rename/link operations under path-preserving policies when the target path does not exist on the required branch. Source: <https://trapexit.github.io/mergerfs/latest/faq/why_isnt_it_working/>
+- `mergerfs` gives you a pooled namespace as the primary interface; `jbofs` gives you explicit physical paths plus a
+  separate symlink namespace.
+- `mergerfs` must make policy choices at create/rename/link time; `jbofs` makes you choose placement explicitly or via
+  the configured `first` / `most-free` policy at command invocation.
+- `mergerfs` can return `EXDEV` for rename/link operations under path-preserving policies when the target path does not
+  exist on the required branch.
+  Source: <https://trapexit.github.io/mergerfs/latest/faq/why_isnt_it_working/>
 - `jbofs` has no union-filesystem rename semantics because it is not a union mount.
 
 ### FUSE passthrough I/O note
@@ -96,8 +101,8 @@ Source: <https://trapexit.github.io/mergerfs/latest/>
 Source: <https://trapexit.github.io/mergerfs/latest/>
 
 At the kernel level, FUSE passthrough allows certain operations to bypass the userspace daemon and execute directly
-against a registered backing file.  The kernel docs say passthrough currently covers operations such as `read(2)`,
-`write(2)`, `splice(2)`, and `mmap(2)`.
+against a registered backing file.
+The kernel docs say passthrough currently covers operations such as `read(2)`, `write(2)`, `splice(2)`, and `mmap(2)`.
 Source: <https://docs.kernel.org/6.17/filesystems/fuse-passthrough.html>
 
 That matters because the usual shorthand “FUSE is always slow because every I/O goes through userspace” is not
@@ -117,8 +122,7 @@ differences versus `jbofs`:
 
 - it is still a union/FUSE mount with policy-driven namespace behavior
 - rename/create/link semantics are still those of the union layer
-- deployment and security constraints may be materially different from a
-  plain-filesystem-plus-symlink model
+- deployment and security constraints may be materially different from a plain-filesystem-plus-symlink model
 
 ### Where `mergerfs` is better
 
@@ -131,23 +135,20 @@ differences versus `jbofs`:
 - You do not want FUSE/union semantics in the main IO path
 - You want explicit placement and explicit repair operations
 - You want to avoid policy surprises around rename/link/create behavior
-- Even if `mergerfs` passthrough narrows the raw-I/O gap, `jbofs` still has the
-  simpler semantic model because there is no union layer in the steady-state
-  access path at all
+- Even if `mergerfs` passthrough narrows the raw-I/O gap, `jbofs` still has the simpler semantic model because there is
+  no union layer in the steady-state access path at all
 
 ### Best fit
 
 - Home-lab/media/library pools
 - “One big tree” UX with otherwise independent filesystems
-- Often paired with SnapRAID for parity, because `mergerfs` explicitly does not
-  provide RAID-like redundancy
+- Often paired with SnapRAID for parity, because `mergerfs` explicitly does not provide RAID-like redundancy
 
 ## GNU Stow and Symlink Farms
 
 GNU Stow describes itself as a symlink farm manager that makes distinct sets of software or data appear to be installed
-in a single tree.
-It is very explicit that it manages symlinks in a target tree and has ownership/conflict semantics around those
-symlinks.
+in a single tree. It is very explicit that it manages symlinks in a target tree and has ownership/conflict semantics
+around those symlinks.
 Source: <https://www.gnu.org/software/stow/manual/>
 
 ### Semantic model
@@ -199,7 +200,8 @@ Sources:
 
 ### Important semantics differences vs `jbofs`
 
-- `md`/dm-raid operate below the filesystem. `jbofs` operates above independent configured filesystems.
+- `md`/dm-raid operate below the filesystem.
+  `jbofs` operates above independent configured filesystems.
 - In RAID0/striped modes, a file’s blocks may live across many disks.
 - In mirrored/parity modes, recovery and integrity are tied to the RAID layer, not to explicit per-file placement.
 - A single logical mount is natural with RAID; `jbofs` intentionally does not do block aggregation.
@@ -218,16 +220,14 @@ Sources:
 
 ### Special note on `linear`
 
-`md`/device-mapper linear concatenation can make multiple devices look like one
-longer block device, but this is still block-device aggregation, not explicit
-per-file placement.
+`md`/device-mapper linear concatenation can make multiple devices look like one longer block device, but this is still
+block-device aggregation, not explicit per-file placement.
 It gives a bigger volume, not the semantics of “this file is on disk 2.”
 
 ## LVM Linear / Striped / Thin / Snapshot
 
-The LVM manual and thin-provisioning docs describe linear, striped, thin, and
-snapshot logical volumes built on device mapper.
-Sources:
+The LVM manual and thin-provisioning docs describe linear, striped, thin, and snapshot logical volumes built on device
+mapper. Sources:
 
 - <https://man7.org/linux/man-pages/man8/lvm.8.html>
 - <https://man7.org/linux/man-pages/man7/lvmthin.7.html>
@@ -259,7 +259,9 @@ Sources:
 
 ## ZFS
 
-OpenZFS documents storage pools (`zpool`), virtual devices (vdevs), end-to-end checksums, scrubs, RAID-Z, snapshots, send/receive, and many advanced features. Sources:
+OpenZFS documents storage pools (`zpool`), virtual devices (vdevs), end-to-end checksums, scrubs, RAID-Z, snapshots,
+send/receive, and many advanced features.
+Sources:
 
 - `zpool` / storage pools: <https://openzfs.github.io/openzfs-docs/man/master/8/zpool.8.html>
 - vdev model: <https://openzfs.github.io/openzfs-docs/Basic%20Concepts/VDEVs.html>
@@ -299,14 +301,13 @@ OpenZFS documents storage pools (`zpool`), virtual devices (vdevs), end-to-end c
 
 ### Important caveat
 
-ZFS can do far more than `jbofs`, but you pay for that with more storage
-semantics, more policy surface, and less “this file is obviously on this single
-independent disk” transparency.
+ZFS can do far more than `jbofs`, but you pay for that with more storage semantics, more policy surface, and less “this
+file is obviously on this single independent disk” transparency.
 
 ## Btrfs
 
-Btrfs documentation describes a copy-on-write filesystem with built-in volume
-management, checksums, subvolumes, snapshots, send/receive, and RAID profiles.
+Btrfs documentation describes a copy-on-write filesystem with built-in volume management, checksums, subvolumes,
+snapshots, send/receive, and RAID profiles.
 Sources:
 
 - introduction / feature overview: <https://btrfs.readthedocs.io/en/latest/Introduction.html>
@@ -323,11 +324,10 @@ Sources:
 
 ### Important semantics differences vs `jbofs`
 
-- Like ZFS, Btrfs is an integrated storage stack rather than an explicit
-  multi-filesystem namespace scheme.
+- Like ZFS, Btrfs is an integrated storage stack rather than an explicit multi-filesystem namespace scheme.
 - Btrfs scrub can automatically repair when replicated profiles exist.
-- Btrfs has subtleties around `NOCOW` / `NODATASUM`: the docs note that `NOCOW`
-  implies `NODATASUM`, which weakens checksum-based protection for those files.
+- Btrfs has subtleties around `NOCOW` / `NODATASUM`: the docs note that `NOCOW` implies `NODATASUM`, which weakens
+  checksum-based protection for those files.
   Source: <https://btrfs.readthedocs.io/en/latest/Scrub.html>
 
 ### Where Btrfs is better
@@ -341,15 +341,12 @@ Sources:
 
 - Simpler operational model
 - Clear independent-disk boundaries
-- Easier direct access to per-disk contents without interpreting subvolume/RAID
-  semantics
+- Easier direct access to per-disk contents without interpreting subvolume/RAID semantics
 
 ## SnapRAID
 
-SnapRAID is a parity-and-scrub system designed around content and parity files
-rather than a pooled filesystem.
-The manual describes parity files, content files, `sync`, `scrub`, and repair
-workflows.
+SnapRAID is a parity-and-scrub system designed around content and parity files rather than a pooled filesystem.
+The manual describes parity files, content files, `sync`, `scrub`, and repair workflows.
 Source: <https://www.snapraid.it/manual.html>
 
 ### Semantic model
@@ -357,8 +354,7 @@ Source: <https://www.snapraid.it/manual.html>
 - Independent data disks remain ordinary filesystems
 - Separate parity files protect data after `sync`
 - Integrity is checked with `scrub`
-- Usually paired with a pooling layer for “one mount” UX, but the parity system
-  itself is separate
+- Usually paired with a pooling layer for “one mount” UX, but the parity system itself is separate
 
 ### Important semantics differences vs `jbofs`
 
@@ -387,9 +383,8 @@ That is a different operational tradeoff from ZFS/Btrfs because parity is not in
 
 ## OverlayFS
 
-OverlayFS is a union-like overlay filesystem, but its kernel docs make clear
-that it is designed around upper/lower layering and hybrid object identity, not
-around pooled storage across data disks.
+OverlayFS is a union-like overlay filesystem, but its kernel docs make clear that it is designed around upper/lower
+layering and hybrid object identity, not around pooled storage across data disks.
 Source: <https://docs.kernel.org/filesystems/overlayfs.html>
 
 ### Why it is usually not the right comparison target
@@ -422,13 +417,12 @@ You can build ad hoc symlink or bind-mount trees without `jbofs`.
 
 ### Bottom line
 
-If you already want a symlink-based model, `jbofs` is mostly about reducing the
-manual footguns of rolling your own.
+If you already want a symlink-based model, `jbofs` is mostly about reducing the manual footguns of rolling your own.
 
 ## Comparison Matrix
 
 | Approach | Aggregates | One mount by default | Redundancy | Checksums / self-heal | Explicit per-file placement | Underlying disks directly readable | Snapshots / replication |
-|---|---|---:|---|---|---:|---:|---|
+| --- | --- | ---: | --- | --- | ---: | ---: | --- |
 | `jbofs` | Namespace over independent filesystems | No | No | No | Yes | Yes | No |
 | `mergerfs` | Paths | Yes | No | No | Policy-driven, not explicit by default | Yes | No |
 | GNU Stow | Symlink target tree | Not really a storage pool | No | No | Not a storage placement tool | Yes | No |
@@ -439,7 +433,7 @@ manual footguns of rolling your own.
 | SnapRAID | Parity over independent filesystems | No | Yes, after sync | Yes via scrub/fix workflow, but not inline CoW semantics | N/A | Yes | No |
 | OverlayFS | Layered filesystem view | Yes | No | No | No | Not the point | No |
 
-## Which Solution Is "Better"?
+## Which Solution Is “Better”?
 
 The answer depends on which semantics you are optimizing for.
 
@@ -461,11 +455,13 @@ The answer depends on which semantics you are optimizing for.
 
 ### If you only want a symlink farm
 
-- GNU Stow or even plain symlinks may be enough, but they do not give you the operational storage workflow that `jbofs` provides
+- GNU Stow or even plain symlinks may be enough, but they do not give you the operational storage workflow that `jbofs`
+  provides
 
 ## Practical Recommendation
 
-For this repo’s goals, the decision to use `jbofs` instead of a pooled or CoW filesystem is strongest when all of the following are true:
+For this repo’s goals, the decision to use `jbofs` instead of a pooled or CoW filesystem is strongest when all of the
+following are true:
 
 - you care where files physically land
 - you want direct per-disk access with no union layer in the main IO path

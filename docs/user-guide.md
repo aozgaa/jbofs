@@ -55,7 +55,7 @@ jbofs cp --policy most-free ./movie.mkv media/movie.mkv
 Notes:
 
 - `--disk` and `--policy` are mutually exclusive
-- if neither is provided, the config's default placement policy is used
+- if neither is provided, the config’s default placement policy is used
 - the source must be a regular file or named pipe
 - the destination logical path must not already exist
 - parent directories under the selected physical root and logical root are created automatically
