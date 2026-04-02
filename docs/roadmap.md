@@ -20,8 +20,7 @@ This document tracks likely follow-up work for `jbofs`. These are ideas and open
 ## Copy Semantics
 
 - [ ] define expected invariants and add a checker for them -- see docs/specs/DOCTOR.md.
-- [ ] define careful behavior when `jbofs cp` is given a source that is already managed by `jbofs`
-- [ ] define careful behavior for multiple logical symlinks pointing at one physical file
+- [ ] jbofs cp rejects files already managed by jbofs (real file or after symlink resolution)
 - [ ] add recursive `cp`
 
 ## Test Coverage
