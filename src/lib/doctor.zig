@@ -82,7 +82,6 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
         &owned_strings,
         config.logical_root,
     );
-    _ = logical_canon;
     var root_canons = try allocator.alloc(?[]const u8, config.roots.len);
     defer allocator.free(root_canons);
     for (config.roots, 0..) |root, i| {
@@ -112,6 +111,25 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
                     .message = msg,
                 });
             }
+        }
+    }
+
+    const logical_canon_path = logical_canon orelse config.logical_root;
+    for (config.roots, 0..) |root, i| {
+        const canon_r = root_canons[i] orelse root.root_path;
+        if (pathsOverlap(logical_canon_path, canon_r)) {
+            const msg = try std.fmt.allocPrint(
+                allocator,
+                "logical_root overlaps with physical root {s}",
+                .{root.root_path},
+            );
+            try owned_strings.append(allocator, msg);
+            try diagnostics.append(allocator, .{
+                .code = "C0006",
+                .scope = .config,
+                .path = config.logical_root,
+                .message = msg,
+            });
         }
     }
 
@@ -486,4 +504,37 @@ test "doctor check reports C0002 for duplicate shortname" {
         break :blk n;
     };
     try std.testing.expectEqual(@as(usize, 1), c0002_count);
+}
+
+test "doctor check reports C0006 when logical root is inside a physical root" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    // Move logical_root inside root_a.
+    const nested_logical = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.root_a, "logical" },
+    );
+    defer std.testing.allocator.free(nested_logical);
+    try std.fs.cwd().makePath(nested_logical);
+
+    var patched_config = owned.config;
+    patched_config.logical_root = nested_logical;
+
+    const report = try checkConfig(std.testing.allocator, patched_config);
+    defer report.deinit(std.testing.allocator);
+
+    const c0006_count = blk: {
+        var n: usize = 0;
+        for (report.diagnostics) |d| {
+            if (std.mem.eql(u8, d.code, "C0006")) n += 1;
+        }
+        break :blk n;
+    };
+    try std.testing.expectEqual(@as(usize, 1), c0006_count);
 }
