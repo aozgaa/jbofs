@@ -94,6 +94,27 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
         );
     }
 
+    for (config.roots, 0..) |root_a, i| {
+        const canon_a = root_canons[i] orelse config.roots[i].root_path;
+        for (config.roots[i + 1 ..], i + 1..config.roots.len) |root_b, j| {
+            const canon_b = root_canons[j] orelse config.roots[j].root_path;
+            if (pathsOverlap(canon_a, canon_b)) {
+                const msg = try std.fmt.allocPrint(
+                    allocator,
+                    "physical root overlaps with {s}",
+                    .{root_b.root_path},
+                );
+                try owned_strings.append(allocator, msg);
+                try diagnostics.append(allocator, .{
+                    .code = "C0005",
+                    .scope = .config,
+                    .path = root_a.root_path,
+                    .message = msg,
+                });
+            }
+        }
+    }
+
     sortDiagnostics(diagnostics.items);
     return .{
         .diagnostics = try diagnostics.toOwnedSlice(allocator),
@@ -136,6 +157,13 @@ fn appendPathDiagnostic(
         return;
     };
     defer dir.close();
+}
+
+fn pathsOverlap(a: []const u8, b: []const u8) bool {
+    if (std.mem.eql(u8, a, b)) return true;
+    if (std.mem.startsWith(u8, a, b) and a[b.len] == '/') return true;
+    if (std.mem.startsWith(u8, b, a) and b[a.len] == '/') return true;
+    return false;
 }
 
 fn appendCanonDiagnostic(
@@ -392,6 +420,41 @@ test "doctor check reports C0004 for non-canonicalizable logical root" {
         } else false;
         try std.testing.expect(found);
     }
+}
+
+test "doctor check reports C0005 when one physical root is inside another" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    // Make root_b a subdirectory of root_a.
+    const nested = try std.fs.path.join(std.testing.allocator, &.{ owned.root_a, "sub" });
+    defer std.testing.allocator.free(nested);
+    try std.fs.cwd().makePath(nested);
+
+    // Patch root_b to point to the nested path.
+    var patched_roots = [_]cfg.Root{
+        .{ .root_path = owned.root_a, .shortname = owned.config.roots[0].shortname },
+        .{ .root_path = nested, .shortname = owned.config.roots[1].shortname },
+    };
+    var patched_config = owned.config;
+    patched_config.roots = &patched_roots;
+
+    const report = try checkConfig(std.testing.allocator, patched_config);
+    defer report.deinit(std.testing.allocator);
+
+    const c0005_count = blk: {
+        var n: usize = 0;
+        for (report.diagnostics) |d| {
+            if (std.mem.eql(u8, d.code, "C0005")) n += 1;
+        }
+        break :blk n;
+    };
+    try std.testing.expectEqual(@as(usize, 1), c0005_count);
 }
 
 test "doctor check reports C0002 for duplicate shortname" {
