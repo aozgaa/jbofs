@@ -327,8 +327,8 @@ test "doctor check reports C0002 for duplicate shortname" {
     // Both roots now share the same shortname.
     // Note: cfg.Config.roots is []const Root so use mutable array copy pattern.
     var patched_roots = [_]cfg.Root{
-        .{ .root_path = owned.root_a, .shortname = "disk-0" },
-        .{ .root_path = owned.root_b, .shortname = "disk-0" },
+        .{ .root_path = owned.root_a, .shortname = owned.config.roots[0].shortname },
+        .{ .root_path = owned.root_b, .shortname = owned.config.roots[0].shortname },
     };
     var patched_config = owned.config;
     patched_config.roots = &patched_roots;
