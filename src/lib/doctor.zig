@@ -18,9 +18,30 @@ pub const Report = struct {
     }
 };
 
+fn isValidShortname(name: []const u8) bool {
+    if (name.len == 0) return false;
+    for (name, 0..) |c, i| {
+        const ok = (c >= 'A' and c <= 'Z') or (c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or
+            (i > 0 and (c == '.' or c == '_' or c == '-'));
+        if (!ok) return false;
+    }
+    return true;
+}
+
 pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
     var diagnostics = std.ArrayList(Diagnostic).empty;
     errdefer diagnostics.deinit(allocator);
+
+    for (config.roots) |root| {
+        if (!isValidShortname(root.shortname)) {
+            try diagnostics.append(allocator, .{
+                .code = "C0001",
+                .scope = .config,
+                .path = root.shortname,
+                .message = "invalid root shortname; must match [A-Za-z0-9][A-Za-z0-9._-]*",
+            });
+        }
+    }
 
     try appendPathDiagnostic(allocator, &diagnostics, config.logical_root);
     for (config.roots) |root| {
@@ -213,4 +234,52 @@ test "doctor check reports C0003 for missing physical root" {
 
     try std.testing.expectEqual(@as(usize, 1), report.diagnostics.len);
     try std.testing.expectEqualStrings("C0003", report.diagnostics[0].code);
+}
+
+test "doctor check reports C0001 for invalid shortname" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    // Patch one root to have an invalid shortname via a mutable copy.
+    var patched_roots = [_]cfg.Root{
+        .{ .root_path = owned.config.roots[0].root_path, .shortname = "" },
+        owned.config.roots[1],
+    };
+    var patched_config = owned.config;
+    patched_config.roots = &patched_roots;
+
+    const report = try checkConfig(std.testing.allocator, patched_config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), report.diagnostics.len);
+    try std.testing.expectEqualStrings("C0001", report.diagnostics[0].code);
+}
+
+test "doctor check reports C0001 for shortname starting with dot" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    // Patch one root to have an invalid shortname via a mutable copy.
+    var patched_roots = [_]cfg.Root{
+        .{ .root_path = owned.config.roots[0].root_path, .shortname = ".hidden" },
+        owned.config.roots[1],
+    };
+    var patched_config = owned.config;
+    patched_config.roots = &patched_roots;
+
+    const report = try checkConfig(std.testing.allocator, patched_config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), report.diagnostics.len);
+    try std.testing.expectEqualStrings("C0001", report.diagnostics[0].code);
 }
