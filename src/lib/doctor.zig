@@ -12,8 +12,11 @@ pub const Diagnostic = struct {
 
 pub const Report = struct {
     diagnostics: []Diagnostic,
+    owned_strings: [][]u8,
 
     pub fn deinit(self: Report, allocator: std.mem.Allocator) void {
+        for (self.owned_strings) |s| allocator.free(s);
+        allocator.free(self.owned_strings);
         allocator.free(self.diagnostics);
     }
 };
@@ -31,6 +34,11 @@ fn isValidShortname(name: []const u8) bool {
 pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
     var diagnostics = std.ArrayList(Diagnostic).empty;
     errdefer diagnostics.deinit(allocator);
+    var owned_strings = std.ArrayList([]u8).empty;
+    errdefer {
+        for (owned_strings.items) |s| allocator.free(s);
+        owned_strings.deinit(allocator);
+    }
 
     for (config.roots) |root| {
         if (!isValidShortname(root.shortname)) {
@@ -48,8 +56,31 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
         try appendPathDiagnostic(allocator, &diagnostics, root.root_path);
     }
 
+    // C0002 duplicate shortname check
+    for (config.roots, 0..) |root_a, i| {
+        for (config.roots[i + 1 ..]) |root_b| {
+            if (std.mem.eql(u8, root_a.shortname, root_b.shortname)) {
+                const msg = try std.fmt.allocPrint(
+                    allocator,
+                    "duplicate shortname; also used by root at {s}",
+                    .{root_b.root_path},
+                );
+                try owned_strings.append(allocator, msg);
+                try diagnostics.append(allocator, .{
+                    .code = "C0002",
+                    .scope = .config,
+                    .path = root_a.root_path,
+                    .message = msg,
+                });
+            }
+        }
+    }
+
     sortDiagnostics(diagnostics.items);
-    return .{ .diagnostics = try diagnostics.toOwnedSlice(allocator) };
+    return .{
+        .diagnostics = try diagnostics.toOwnedSlice(allocator),
+        .owned_strings = try owned_strings.toOwnedSlice(allocator),
+    };
 }
 
 pub fn run(allocator: std.mem.Allocator, config: cfg.Config) !void {
@@ -282,4 +313,35 @@ test "doctor check reports C0001 for shortname starting with dot" {
 
     try std.testing.expectEqual(@as(usize, 1), report.diagnostics.len);
     try std.testing.expectEqualStrings("C0001", report.diagnostics[0].code);
+}
+
+test "doctor check reports C0002 for duplicate shortname" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    // Both roots now share the same shortname.
+    // Note: cfg.Config.roots is []const Root so use mutable array copy pattern.
+    var patched_roots = [_]cfg.Root{
+        .{ .root_path = owned.root_a, .shortname = "disk-0" },
+        .{ .root_path = owned.root_b, .shortname = "disk-0" },
+    };
+    var patched_config = owned.config;
+    patched_config.roots = &patched_roots;
+
+    const report = try checkConfig(std.testing.allocator, patched_config);
+    defer report.deinit(std.testing.allocator);
+
+    const c0002_count = blk: {
+        var n: usize = 0;
+        for (report.diagnostics) |d| if (std.mem.eql(u8, d.code, "C0002")) {
+            n += 1;
+        };
+        break :blk n;
+    };
+    try std.testing.expectEqual(@as(usize, 1), c0002_count);
 }
