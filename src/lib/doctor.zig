@@ -76,6 +76,24 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
         }
     }
 
+    const logical_canon = try appendCanonDiagnostic(
+        allocator,
+        &diagnostics,
+        &owned_strings,
+        config.logical_root,
+    );
+    _ = logical_canon;
+    var root_canons = try allocator.alloc(?[]const u8, config.roots.len);
+    defer allocator.free(root_canons);
+    for (config.roots, 0..) |root, i| {
+        root_canons[i] = try appendCanonDiagnostic(
+            allocator,
+            &diagnostics,
+            &owned_strings,
+            root.root_path,
+        );
+    }
+
     sortDiagnostics(diagnostics.items);
     return .{
         .diagnostics = try diagnostics.toOwnedSlice(allocator),
@@ -118,6 +136,31 @@ fn appendPathDiagnostic(
         return;
     };
     defer dir.close();
+}
+
+fn appendCanonDiagnostic(
+    allocator: std.mem.Allocator,
+    diagnostics: *std.ArrayList(Diagnostic),
+    owned_strings: *std.ArrayList([]u8),
+    path: []const u8,
+) !?[]const u8 {
+    const canon = std.fs.realpathAlloc(allocator, path) catch {
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "configured path cannot be canonicalized (realpath failed)",
+            .{},
+        );
+        try owned_strings.append(allocator, msg);
+        try diagnostics.append(allocator, .{
+            .code = "C0004",
+            .scope = .config,
+            .path = path,
+            .message = msg,
+        });
+        return null;
+    };
+    try owned_strings.append(allocator, canon);
+    return canon;
 }
 
 fn printDiagnostic(writer: *std.Io.Writer, diagnostic: Diagnostic) !void {
@@ -245,8 +288,11 @@ test "doctor check reports C0003 for missing logical root" {
     const report = try checkConfig(std.testing.allocator, owned.config);
     defer report.deinit(std.testing.allocator);
 
-    try std.testing.expectEqual(@as(usize, 1), report.diagnostics.len);
-    try std.testing.expectEqualStrings("C0003", report.diagnostics[0].code);
+    // A missing path triggers both C0003 (can't open) and C0004 (can't canonicalize).
+    const found_c0003 = for (report.diagnostics) |d| {
+        if (std.mem.eql(u8, d.code, "C0003")) break true;
+    } else false;
+    try std.testing.expect(found_c0003);
 }
 
 test "doctor check reports C0003 for missing physical root" {
@@ -263,8 +309,11 @@ test "doctor check reports C0003 for missing physical root" {
     const report = try checkConfig(std.testing.allocator, owned.config);
     defer report.deinit(std.testing.allocator);
 
-    try std.testing.expectEqual(@as(usize, 1), report.diagnostics.len);
-    try std.testing.expectEqualStrings("C0003", report.diagnostics[0].code);
+    // A missing path triggers both C0003 (can't open) and C0004 (can't canonicalize).
+    const found_c0003 = for (report.diagnostics) |d| {
+        if (std.mem.eql(u8, d.code, "C0003")) break true;
+    } else false;
+    try std.testing.expect(found_c0003);
 }
 
 test "doctor check reports C0001 for invalid shortname" {
@@ -313,6 +362,36 @@ test "doctor check reports C0001 for shortname starting with dot" {
 
     try std.testing.expectEqual(@as(usize, 1), report.diagnostics.len);
     try std.testing.expectEqualStrings("C0001", report.diagnostics[0].code);
+}
+
+test "doctor check reports C0004 for non-canonicalizable logical root" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    // Point logical_root at a path that doesn't exist → realpath fails.
+    const missing = try std.fs.path.join(std.testing.allocator, &.{ tmp_root, "no-such-dir" });
+    defer std.testing.allocator.free(missing);
+
+    // Patch logical root using mutable copy pattern.
+    var patched_config = owned.config;
+    patched_config.logical_root = missing;
+
+    const report = try checkConfig(std.testing.allocator, patched_config);
+    defer report.deinit(std.testing.allocator);
+
+    // Expect both C0003 (can't open) and C0004 (can't canonicalize).
+    const codes: []const []const u8 = &.{ "C0003", "C0004" };
+    for (codes) |code| {
+        const found = for (report.diagnostics) |d| {
+            if (std.mem.eql(u8, d.code, code)) break true;
+        } else false;
+        try std.testing.expect(found);
+    }
 }
 
 test "doctor check reports C0002 for duplicate shortname" {
