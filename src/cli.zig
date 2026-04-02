@@ -1,13 +1,14 @@
 const std = @import("std");
 const clap = @import("clap");
 const cp_cmd = @import("commands/cp.zig");
+const doctor_cmd = @import("commands/doctor.zig");
 const init_cmd = @import("commands/init.zig");
 const prune_cmd = @import("commands/prune.zig");
 const query_cmd = @import("commands/query.zig");
 const rm_cmd = @import("commands/rm.zig");
 const sync_cmd = @import("commands/sync.zig");
 
-pub const Subcommand = enum { init, cp, rm, prune, sync, query };
+pub const Subcommand = enum { init, cp, rm, prune, sync, doctor, query };
 pub const QuerySubcommand = enum { @"root-for-shortname" };
 
 pub const Action = union(enum) {
@@ -17,6 +18,7 @@ pub const Action = union(enum) {
     help_rm,
     help_prune,
     help_sync,
+    help_doctor,
     help_query,
     help_query_root_for_shortname,
     init: init_cmd.Args,
@@ -24,6 +26,7 @@ pub const Action = union(enum) {
     rm: rm_cmd.Args,
     prune: prune_cmd.Args,
     sync: sync_cmd.Args,
+    doctor: doctor_cmd.Args,
     query_root_for_shortname: query_cmd.RootForShortnameArgs,
 };
 
@@ -96,6 +99,11 @@ const sync_params = clap.parseParamsComptime(
     \\
 );
 
+const doctor_params = clap.parseParamsComptime(
+    \\-h, --help  Display this help and exit.
+    \\
+);
+
 const query_params = clap.parseParamsComptime(
     \\-h, --help  Display this help and exit.
     \\<QUERY>
@@ -153,6 +161,7 @@ fn parseIter(allocator: std.mem.Allocator, iter: anytype) !Parsed {
         .rm => try parseRm(allocator, iter, config_override),
         .prune => try parsePrune(allocator, iter, config_override),
         .sync => try parseSync(allocator, iter, config_override),
+        .doctor => try parseDoctor(allocator, iter, config_override),
         .query => try parseQuery(allocator, iter, config_override),
     };
 }
@@ -265,6 +274,21 @@ fn parseSync(allocator: std.mem.Allocator, iter: anytype, config_override: ?[]u8
     return .{ .config_override = config_override, .action = .{ .sync = .{} } };
 }
 
+fn parseDoctor(allocator: std.mem.Allocator, iter: anytype, config_override: ?[]u8) !Parsed {
+    var diag = clap.Diagnostic{};
+    var res = clap.parseEx(clap.Help, &doctor_params, clap.parsers.default, iter, .{
+        .diagnostic = &diag,
+        .allocator = allocator,
+    }) catch |err| {
+        try reportCommandParseFailure("jbofs doctor ", clap.Help, &doctor_params, err, diag);
+        return error.InvalidCli;
+    };
+    defer res.deinit();
+
+    if (res.args.help != 0) return .{ .config_override = config_override, .action = .help_doctor };
+    return .{ .config_override = config_override, .action = .{ .doctor = .{} } };
+}
+
 fn parseQuery(allocator: std.mem.Allocator, iter: anytype, config_override: ?[]u8) !Parsed {
     var diag = clap.Diagnostic{};
     var res = clap.parseEx(clap.Help, &query_params, query_parsers, iter, .{
@@ -328,13 +352,14 @@ pub fn printHelp(action: Action) !void {
         .help_top => {
             try stdout_writer.interface.print("usage: jbofs ", .{});
             try clap.usage(&stdout_writer.interface, clap.Help, &top_params);
-            try stdout_writer.interface.writeAll("\n\nsubcommands:\n  init\n  cp\n  rm\n  prune\n  sync\n  query\n");
+            try stdout_writer.interface.writeAll("\n\nsubcommands:\n  init\n  cp\n  rm\n  prune\n  sync\n  doctor\n  query\n");
         },
         .help_init => try printCommandHelp(&stdout_writer.interface, "jbofs init ", &init_params),
         .help_cp => try printCommandHelp(&stdout_writer.interface, "jbofs cp ", &cp_params),
         .help_rm => try printCommandHelp(&stdout_writer.interface, "jbofs rm ", &rm_params),
         .help_prune => try printCommandHelp(&stdout_writer.interface, "jbofs prune ", &prune_params),
         .help_sync => try printCommandHelp(&stdout_writer.interface, "jbofs sync ", &sync_params),
+        .help_doctor => try printCommandHelp(&stdout_writer.interface, "jbofs doctor ", &doctor_params),
         .help_query => try printRecCommandHelp(&stdout_writer.interface, "jbofs query ", &query_params, "  root-for-shortname\n"),
         .help_query_root_for_shortname => try printCommandHelp(&stdout_writer.interface, "jbofs query root-for-shortname ", &query_root_for_shortname_params),
         else => {},
@@ -447,4 +472,20 @@ test "cp usage includes source and logical path" {
     defer std.testing.allocator.free(usage);
     try std.testing.expect(std.mem.indexOf(u8, usage, "<SOURCE>") != null);
     try std.testing.expect(std.mem.indexOf(u8, usage, "<LOGICAL_PATH>") != null);
+}
+
+test "parse doctor help" {
+    const parsed = try parseForTest(std.testing.allocator, "jbofs doctor --help");
+    defer parsed.deinit(std.testing.allocator);
+
+    switch (parsed.action) {
+        .help_doctor => {},
+        else => return error.UnexpectedAction,
+    }
+}
+
+test "doctor usage includes no positional arguments" {
+    const usage = try renderUsageString(std.testing.allocator, "jbofs doctor ", clap.Help, &doctor_params);
+    defer std.testing.allocator.free(usage);
+    try std.testing.expect(std.mem.indexOf(u8, usage, "<") == null);
 }
