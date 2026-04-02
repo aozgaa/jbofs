@@ -42,11 +42,17 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
 
     for (config.roots) |root| {
         if (!isValidShortname(root.shortname)) {
+            const msg = try std.fmt.allocPrint(
+                allocator,
+                "invalid root shortname '{s}'; must match [A-Za-z0-9][A-Za-z0-9._-]*",
+                .{root.shortname},
+            );
+            try owned_strings.append(allocator, msg);
             try diagnostics.append(allocator, .{
                 .code = "C0001",
                 .scope = .config,
-                .path = root.shortname,
-                .message = "invalid root shortname; must match [A-Za-z0-9][A-Za-z0-9._-]*",
+                .path = root.root_path,
+                .message = msg,
             });
         }
     }
