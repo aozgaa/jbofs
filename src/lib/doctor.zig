@@ -8,15 +8,17 @@ pub const Diagnostic = struct {
     scope: Scope,
     path: []const u8,
     message: []const u8,
+
+    pub fn deinit(self: Diagnostic, allocator: std.mem.Allocator) void {
+        allocator.free(self.message);
+    }
 };
 
 pub const Report = struct {
     diagnostics: []Diagnostic,
-    owned_strings: [][]u8,
 
     pub fn deinit(self: Report, allocator: std.mem.Allocator) void {
-        for (self.owned_strings) |s| allocator.free(s);
-        allocator.free(self.owned_strings);
+        for (self.diagnostics) |d| d.deinit(allocator);
         allocator.free(self.diagnostics);
     }
 };
@@ -31,13 +33,24 @@ fn isValidShortname(name: []const u8) bool {
     return true;
 }
 
+/// Appends a diagnostic, taking ownership of `diag.message`.
+/// On OOM, frees diag.message before propagating the error.
+fn appendDiagnostic(
+    allocator: std.mem.Allocator,
+    diagnostics: *std.ArrayList(Diagnostic),
+    diag: Diagnostic,
+) !void {
+    diagnostics.append(allocator, diag) catch |err| {
+        diag.deinit(allocator);
+        return err;
+    };
+}
+
 pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
     var diagnostics = std.ArrayList(Diagnostic).empty;
-    errdefer diagnostics.deinit(allocator);
-    var owned_strings = std.ArrayList([]u8).empty;
     errdefer {
-        for (owned_strings.items) |s| allocator.free(s);
-        owned_strings.deinit(allocator);
+        for (diagnostics.items) |d| d.deinit(allocator);
+        diagnostics.deinit(allocator);
     }
 
     for (config.roots) |root| {
@@ -47,8 +60,7 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
                 "invalid root shortname '{s}'; must match [A-Za-z0-9][A-Za-z0-9._-]*",
                 .{root.shortname},
             );
-            try owned_strings.append(allocator, msg);
-            try diagnostics.append(allocator, .{
+            try appendDiagnostic(allocator, &diagnostics, .{
                 .code = "C0001",
                 .scope = .config,
                 .path = root.root_path,
@@ -71,8 +83,7 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
                     "duplicate shortname; also used by root at {s}",
                     .{root_b.root_path},
                 );
-                try owned_strings.append(allocator, msg);
-                try diagnostics.append(allocator, .{
+                try appendDiagnostic(allocator, &diagnostics, .{
                     .code = "C0002",
                     .scope = .config,
                     .path = root_a.root_path,
@@ -82,35 +93,33 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
         }
     }
 
-    const logical_canon = try appendCanonDiagnostic(
-        allocator,
-        &diagnostics,
-        &owned_strings,
-        config.logical_root,
-    );
-    var root_canons = try allocator.alloc(?[]const u8, config.roots.len);
-    defer allocator.free(root_canons);
+    // Canonicalize all configured paths for overlap checks (C0004, C0005, C0006).
+    // Canonical strings are intermediate data: owned locally, freed before return.
+    const logical_canon: ?[]u8 = try appendCanonDiagnostic(allocator, &diagnostics, config.logical_root);
+    defer if (logical_canon) |c| allocator.free(c);
+
+    var root_canons = try allocator.alloc(?[]u8, config.roots.len);
+    for (root_canons) |*slot| slot.* = null;
+    defer {
+        for (root_canons) |canon| if (canon) |c| allocator.free(c);
+        allocator.free(root_canons);
+    }
     for (config.roots, 0..) |root, i| {
-        root_canons[i] = try appendCanonDiagnostic(
-            allocator,
-            &diagnostics,
-            &owned_strings,
-            root.root_path,
-        );
+        root_canons[i] = try appendCanonDiagnostic(allocator, &diagnostics, root.root_path);
     }
 
+    // C0005 physical roots overlap check
     for (config.roots, 0..) |root_a, i| {
-        const canon_a = root_canons[i] orelse config.roots[i].root_path;
+        const canon_a: []const u8 = root_canons[i] orelse config.roots[i].root_path;
         for (config.roots[i + 1 ..], i + 1..config.roots.len) |root_b, j| {
-            const canon_b = root_canons[j] orelse config.roots[j].root_path;
+            const canon_b: []const u8 = root_canons[j] orelse config.roots[j].root_path;
             if (pathsOverlap(canon_a, canon_b)) {
                 const msg = try std.fmt.allocPrint(
                     allocator,
                     "physical root overlaps with {s}",
                     .{root_b.root_path},
                 );
-                try owned_strings.append(allocator, msg);
-                try diagnostics.append(allocator, .{
+                try appendDiagnostic(allocator, &diagnostics, .{
                     .code = "C0005",
                     .scope = .config,
                     .path = root_a.root_path,
@@ -120,17 +129,17 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
         }
     }
 
-    const logical_canon_path = logical_canon orelse config.logical_root;
+    // C0006 logical_root overlaps with physical root check
+    const logical_canon_path: []const u8 = logical_canon orelse config.logical_root;
     for (config.roots, 0..) |root, i| {
-        const canon_r = root_canons[i] orelse root.root_path;
+        const canon_r: []const u8 = root_canons[i] orelse root.root_path;
         if (pathsOverlap(logical_canon_path, canon_r)) {
             const msg = try std.fmt.allocPrint(
                 allocator,
                 "logical_root overlaps with physical root {s}",
                 .{root.root_path},
             );
-            try owned_strings.append(allocator, msg);
-            try diagnostics.append(allocator, .{
+            try appendDiagnostic(allocator, &diagnostics, .{
                 .code = "C0006",
                 .scope = .config,
                 .path = config.logical_root,
@@ -140,10 +149,7 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
     }
 
     sortDiagnostics(diagnostics.items);
-    return .{
-        .diagnostics = try diagnostics.toOwnedSlice(allocator),
-        .owned_strings = try owned_strings.toOwnedSlice(allocator),
-    };
+    return .{ .diagnostics = try diagnostics.toOwnedSlice(allocator) };
 }
 
 pub fn run(allocator: std.mem.Allocator, config: cfg.Config) !void {
@@ -172,38 +178,30 @@ fn appendPathDiagnostic(
     path: []const u8,
 ) !void {
     var dir = std.fs.openDirAbsolute(path, .{}) catch {
-        try diagnostics.append(allocator, .{
+        const msg = try allocator.dupe(u8, "configured path is missing or unopenable");
+        try appendDiagnostic(allocator, diagnostics, .{
             .code = "C0003",
             .scope = .config,
             .path = path,
-            .message = "configured path is missing or unopenable",
+            .message = msg,
         });
         return;
     };
     defer dir.close();
 }
 
-fn pathsOverlap(a: []const u8, b: []const u8) bool {
-    if (std.mem.eql(u8, a, b)) return true;
-    if (std.mem.startsWith(u8, a, b) and a[b.len] == '/') return true;
-    if (std.mem.startsWith(u8, b, a) and b[a.len] == '/') return true;
-    return false;
-}
-
 fn appendCanonDiagnostic(
     allocator: std.mem.Allocator,
     diagnostics: *std.ArrayList(Diagnostic),
-    owned_strings: *std.ArrayList([]u8),
     path: []const u8,
-) !?[]const u8 {
+) !?[]u8 {
     const canon = std.fs.realpathAlloc(allocator, path) catch {
         const msg = try std.fmt.allocPrint(
             allocator,
             "configured path cannot be canonicalized (realpath failed)",
             .{},
         );
-        try owned_strings.append(allocator, msg);
-        try diagnostics.append(allocator, .{
+        try appendDiagnostic(allocator, diagnostics, .{
             .code = "C0004",
             .scope = .config,
             .path = path,
@@ -211,8 +209,14 @@ fn appendCanonDiagnostic(
         });
         return null;
     };
-    try owned_strings.append(allocator, canon);
     return canon;
+}
+
+fn pathsOverlap(a: []const u8, b: []const u8) bool {
+    if (std.mem.eql(u8, a, b)) return true;
+    if (std.mem.startsWith(u8, a, b) and a[b.len] == '/') return true;
+    if (std.mem.startsWith(u8, b, a) and b[a.len] == '/') return true;
+    return false;
 }
 
 fn printDiagnostic(writer: *std.Io.Writer, diagnostic: Diagnostic) !void {
