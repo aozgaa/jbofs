@@ -99,13 +99,12 @@ The initial implementation should use these codes:
 ### Logical
 
 - `L0001` non-directory, non-symlink entry under `logical_root`
-- `L0002` logical symlink has a symlink ancestor
-- `L0003` logical symlink target is not absolute
-- `L0004` logical symlink target string is not canonicalized
-- `L0005` logical symlink target is missing
-- `L0006` logical symlink target resolves outside configured physical roots
+- `L0002` logical symlink target is not absolute
+- `L0003` logical symlink target string is not canonicalized
+- `L0004` logical symlink target resolves inside logical root
+- `L0005` logical symlink target resolves outside configured physical roots
+- `L0006` logical symlink target is missing
 - `L0007` logical symlink target does not resolve to a regular file
-- `L0008` logical relative path and physical relative path differ
 - `L0009` multiple logical symlinks map to one physical file
 
 ### Physical
