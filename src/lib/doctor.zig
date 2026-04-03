@@ -1,15 +1,21 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const cfg = @import("../config.zig");
 
-pub const Scope = enum { config };
+pub const Scope = enum {
+    config,
+    logical,
+};
 
 pub const Diagnostic = struct {
     code: []const u8,
     scope: Scope,
     path: []const u8,
     message: []const u8,
+    owns_path: bool = false,
 
     pub fn deinit(self: Diagnostic, allocator: std.mem.Allocator) void {
+        if (self.owns_path) allocator.free(self.path);
         allocator.free(self.message);
     }
 };
@@ -33,8 +39,9 @@ fn isValidShortname(name: []const u8) bool {
     return true;
 }
 
-/// Appends a diagnostic, taking ownership of `diag.message`.
-/// On OOM, frees diag.message before propagating the error.
+/// Appends a diagnostic, taking ownership of `diag.message` and, when `owns_path`
+/// is set, `diag.path`. On OOM, frees any owned allocations before propagating
+/// the error.
 fn appendDiagnostic(
     allocator: std.mem.Allocator,
     diagnostics: *std.ArrayList(Diagnostic),
@@ -148,6 +155,8 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
         }
     }
 
+    try appendLogicalEntryDiagnostics(allocator, &diagnostics, config.logical_root);
+
     sortDiagnostics(diagnostics.items);
     return .{ .diagnostics = try diagnostics.toOwnedSlice(allocator) };
 }
@@ -210,6 +219,42 @@ fn appendCanonDiagnostic(
         return null;
     };
     return canon;
+}
+
+fn appendLogicalEntryDiagnostics(
+    allocator: std.mem.Allocator,
+    diagnostics: *std.ArrayList(Diagnostic),
+    logical_root: []const u8,
+) !void {
+    var dir = std.fs.openDirAbsolute(logical_root, .{ .iterate = true }) catch return;
+    defer dir.close();
+
+    var walker = try dir.walk(allocator);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        switch (entry.kind) {
+            .directory, .sym_link => {},
+            else => {
+                const logical_path = try std.fs.path.join(allocator, &.{ logical_root, entry.path });
+                defer allocator.free(logical_path);
+
+                const kind_name = @tagName(entry.kind);
+                const msg = try std.fmt.allocPrint(
+                    allocator,
+                    "unexpected logical entry kind '{s}'; expected directory or symlink",
+                    .{kind_name},
+                );
+                try appendDiagnostic(allocator, diagnostics, .{
+                    .code = "L0001",
+                    .scope = .logical,
+                    .path = try allocator.dupe(u8, logical_path),
+                    .message = msg,
+                    .owns_path = true,
+                });
+            },
+        }
+    }
 }
 
 fn pathsOverlap(a: []const u8, b: []const u8) bool {
@@ -301,6 +346,34 @@ fn makeConfig(allocator: std.mem.Allocator, tmp_root: []const u8) !OwnedConfig {
         .root_a = root_a,
         .root_b = root_b,
     };
+}
+
+fn createFifo(path: []const u8) !void {
+    const posix_path = try std.posix.toPosixPath(path);
+    const fifo_mode: u32 = std.os.linux.S.IFIFO | 0o644;
+    const mknod_ret = std.os.linux.mknod(&posix_path, fifo_mode, 0);
+    try std.testing.expectEqual(@as(usize, 0), mknod_ret);
+}
+
+fn createUnixSocket(path: []const u8) !std.posix.socket_t {
+    const sock = try std.posix.socket(std.posix.AF.UNIX, std.posix.SOCK.DGRAM, 0);
+    errdefer std.posix.close(sock);
+
+    var addr: std.posix.sockaddr.un = undefined;
+    addr.family = std.posix.AF.UNIX;
+    @memset(&addr.path, 0);
+    if (path.len > addr.path.len) return error.NameTooLong;
+    @memcpy(addr.path[0..path.len], path);
+    try std.posix.bind(sock, @ptrCast(&addr), @sizeOf(std.posix.sockaddr.un));
+    return sock;
+}
+
+fn countDiagnosticsWithCode(report: Report, code: []const u8) usize {
+    var count: usize = 0;
+    for (report.diagnostics) |d| {
+        if (std.mem.eql(u8, d.code, code)) count += 1;
+    }
+    return count;
 }
 
 test "doctor check succeeds when config paths exist" {
@@ -547,4 +620,129 @@ test "doctor check reports C0006 when logical root is inside a physical root" {
         break :blk n;
     };
     try std.testing.expectEqual(@as(usize, 1), c0006_count);
+}
+
+test "doctor check accepts directories and symlinks under logical root for L0001" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const child_dir = try std.fs.path.join(std.testing.allocator, &.{ owned.logical_root, "child-dir" });
+    defer std.testing.allocator.free(child_dir);
+    try std.fs.cwd().makePath(child_dir);
+
+    const child_link = try std.fs.path.join(std.testing.allocator, &.{ owned.logical_root, "child-link" });
+    defer std.testing.allocator.free(child_link);
+    try std.fs.symLinkAbsolute("/definitely/missing-target", child_link, .{});
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 0), countDiagnosticsWithCode(report, "L0001"));
+}
+
+test "doctor check reports L0001 for regular file under logical root" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const invalid_entry = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "loose-file.txt" },
+    );
+    defer std.testing.allocator.free(invalid_entry);
+
+    var file = try std.fs.createFileAbsolute(invalid_entry, .{});
+    defer file.close();
+    try file.writeAll("bad");
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), report.diagnostics.len);
+    try std.testing.expectEqualStrings("L0001", report.diagnostics[0].code);
+    try std.testing.expectEqualStrings(invalid_entry, report.diagnostics[0].path);
+}
+
+test "doctor check reports L0001 for fifo under logical root" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const invalid_entry = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "named-pipe" },
+    );
+    defer std.testing.allocator.free(invalid_entry);
+
+    try createFifo(invalid_entry);
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), report.diagnostics.len);
+    try std.testing.expectEqualStrings("L0001", report.diagnostics[0].code);
+    try std.testing.expectEqualStrings(invalid_entry, report.diagnostics[0].path);
+}
+
+test "doctor check reports L0001 for unix socket under logical root" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const short_root = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ "/tmp", "jbofs-doctor-sock-root" },
+    );
+    defer std.testing.allocator.free(short_root);
+    std.fs.deleteFileAbsolute(short_root) catch {};
+    try std.fs.symLinkAbsolute(owned.logical_root, short_root, .{});
+    defer std.fs.deleteFileAbsolute(short_root) catch {};
+
+    const short_socket_path = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ short_root, "s" },
+    );
+    defer std.testing.allocator.free(short_socket_path);
+
+    const invalid_entry = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "s" },
+    );
+    defer std.testing.allocator.free(invalid_entry);
+
+    const sock = try createUnixSocket(short_socket_path);
+    defer std.posix.close(sock);
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), report.diagnostics.len);
+    try std.testing.expectEqualStrings("L0001", report.diagnostics[0].code);
+    try std.testing.expectEqualStrings(invalid_entry, report.diagnostics[0].path);
+}
+
+test "doctor L0001 device-node coverage requires admin-controlled environment" {
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
+
+    // TODO: Add block-device and character-device L0001 coverage in a container,
+    // user namespace, or other admin-controlled test environment that can create
+    // device nodes without depending on the developer workstation state.
+    return error.SkipZigTest;
 }

@@ -33,6 +33,8 @@ This document tracks likely follow-up work for `jbofs`. These are ideas and open
 - [x] test directories
 - [x] test regular files
 - [x] test FIFOs
+- [ ] add privileged `doctor` inode-kind coverage for block/character devices in an admin-controlled container, jail,
+  cgroup, or equivalent environment
 
 ## Future Evaluation
 
