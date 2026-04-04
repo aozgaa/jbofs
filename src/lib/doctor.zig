@@ -233,12 +233,15 @@ fn appendLogicalEntryDiagnostics(
     defer walker.deinit();
 
     while (try walker.next()) |entry| {
-        switch (entry.kind) {
-            .directory, .sym_link => {},
-            else => {
-                const logical_path = try std.fs.path.join(allocator, &.{ logical_root, entry.path });
-                defer allocator.free(logical_path);
+        const logical_path = try std.fs.path.join(allocator, &.{ logical_root, entry.path });
+        defer allocator.free(logical_path);
 
+        switch (entry.kind) {
+            .directory => {},
+            .sym_link => {
+                try checkLogicalSymlink(allocator, diagnostics, logical_path);
+            },
+            else => {
                 const kind_name = @tagName(entry.kind);
                 const msg = try std.fmt.allocPrint(
                     allocator,
@@ -254,6 +257,30 @@ fn appendLogicalEntryDiagnostics(
                 });
             },
         }
+    }
+}
+
+fn checkLogicalSymlink(
+    allocator: std.mem.Allocator,
+    diagnostics: *std.ArrayList(Diagnostic),
+    logical_path: []const u8,
+) !void {
+    var target_buffer: [std.fs.max_path_bytes]u8 = undefined;
+    const target = try std.fs.readLinkAbsolute(logical_path, &target_buffer);
+
+    if (!std.fs.path.isAbsolute(target)) {
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "logical symlink target is not absolute: {s}",
+            .{target},
+        );
+        try appendDiagnostic(allocator, diagnostics, .{
+            .code = "L0002",
+            .scope = .logical,
+            .path = try allocator.dupe(u8, logical_path),
+            .message = msg,
+            .owns_path = true,
+        });
     }
 }
 
@@ -374,6 +401,39 @@ fn countDiagnosticsWithCode(report: Report, code: []const u8) usize {
         if (std.mem.eql(u8, d.code, code)) count += 1;
     }
     return count;
+}
+
+test "doctor check emits no diagnostics for well formed logical mapping in subdir" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const physical_path = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.root_a, "media", "movie.mkv" },
+    );
+    defer std.testing.allocator.free(physical_path);
+    if (std.fs.path.dirname(physical_path)) |parent| try std.fs.cwd().makePath(parent);
+    var file = try std.fs.createFileAbsolute(physical_path, .{});
+    defer file.close();
+    try file.writeAll("data");
+
+    const logical_link = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "media", "movie.mkv" },
+    );
+    defer std.testing.allocator.free(logical_link);
+    if (std.fs.path.dirname(logical_link)) |parent| try std.fs.cwd().makePath(parent);
+    try std.fs.symLinkAbsolute(physical_path, logical_link, .{});
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 0), report.diagnostics.len);
 }
 
 test "doctor check succeeds when config paths exist" {
@@ -745,4 +805,26 @@ test "doctor L0001 device-node coverage requires admin-controlled environment" {
     // user namespace, or other admin-controlled test environment that can create
     // device nodes without depending on the developer workstation state.
     return error.SkipZigTest;
+}
+
+test "doctor check reports L0002 for relative logical symlink target" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const logical_link = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "relative-link" },
+    );
+    defer std.testing.allocator.free(logical_link);
+    try std.fs.cwd().symLink("relative/target.txt", logical_link, .{});
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "L0002"));
 }
