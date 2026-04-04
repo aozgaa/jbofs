@@ -105,13 +105,13 @@ The initial implementation should use these codes:
 - `L0005` logical symlink target resolves outside configured physical roots
 - `L0006` logical symlink target is missing
 - `L0007` logical symlink target does not resolve to a regular file
-- `L0009` multiple logical symlinks map to one physical file
+- `L0008` logical symlink target relative to physical root is not identical to path relative to logical root
 
 ### Physical
 
-- `P0001` non-directory, non-regular entry under a physical root
-- `P0002` physical file has no corresponding logical symlink
-- `P0003` configured physical root missing or unopenable during physical scan
+- `P0001` configured physical root missing or unopenable during physical scan
+- `P0002` non-directory, non-regular entry under a physical root
+- `P0003` physical file has no corresponding logical symlink
 - `P0004` physical traversal / stat / read failure
 
 ## Invariants
