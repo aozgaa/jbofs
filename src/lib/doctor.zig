@@ -285,7 +285,23 @@ fn checkLogicalSymlink(
         });
     }
 
-    const canonical_target = std.fs.realpathAlloc(allocator, target) catch return;
+    const canonical_target = std.fs.realpathAlloc(allocator, target) catch |err| {
+        if (err == error.FileNotFound) {
+            const msg = try std.fmt.allocPrint(
+                allocator,
+                "logical symlink target is missing: {s}; run `jbofs prune` to remove the dead symlink",
+                .{target},
+            );
+            try appendDiagnostic(allocator, diagnostics, .{
+                .code = "L0006",
+                .scope = .logical,
+                .path = try allocator.dupe(u8, logical_path),
+                .message = msg,
+                .owns_path = true,
+            });
+        }
+        return;
+    };
     defer allocator.free(canonical_target);
 
     if (!std.mem.eql(u8, target, canonical_target)) {
@@ -621,6 +637,39 @@ test "doctor check reports L0005 for logical symlink target outside configured r
     defer report.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "L0005"));
+}
+
+test "doctor check reports L0006 for missing logical symlink target" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const missing_target = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.root_a, "missing", "payload.txt" },
+    );
+    defer std.testing.allocator.free(missing_target);
+
+    const logical_link = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "missing-link" },
+    );
+    defer std.testing.allocator.free(logical_link);
+    try std.fs.symLinkAbsolute(missing_target, logical_link, .{});
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "L0006"));
+
+    const l0006 = for (report.diagnostics) |d| {
+        if (std.mem.eql(u8, d.code, "L0006")) break d;
+    } else unreachable;
+    try std.testing.expect(std.mem.indexOf(u8, l0006.message, "jbofs prune") != null);
 }
 
 test "doctor check succeeds when config paths exist" {
