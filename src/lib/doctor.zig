@@ -344,6 +344,25 @@ fn checkLogicalSymlink(
 
         if (pathStartsWith(canonical_target, canonical_root)) {
             inside_any_root = true;
+
+            const logical_suffix = pathSuffix(logical_path, config.logical_root) orelse break;
+            const physical_suffix = pathSuffix(canonical_target, canonical_root) orelse break;
+
+            if (!std.mem.eql(u8, logical_suffix, physical_suffix)) {
+                const msg = try std.fmt.allocPrint(
+                    allocator,
+                    "logical suffix '{s}' differs from physical suffix '{s}' for target '{s}'",
+                    .{ logical_suffix, physical_suffix, canonical_target },
+                );
+                try appendDiagnostic(allocator, diagnostics, .{
+                    .code = "L0008",
+                    .scope = .logical,
+                    .path = try allocator.dupe(u8, logical_path),
+                    .message = msg,
+                    .owns_path = true,
+                });
+            }
+
             break;
         }
     }
@@ -386,6 +405,12 @@ fn pathStartsWith(path: []const u8, prefix: []const u8) bool {
     if (!std.mem.startsWith(u8, path, prefix)) return false;
     if (path.len == prefix.len) return true;
     return path[prefix.len] == '/';
+}
+
+fn pathSuffix(path: []const u8, prefix: []const u8) ?[]const u8 {
+    if (!pathStartsWith(path, prefix)) return null;
+    if (path.len == prefix.len) return "";
+    return path[prefix.len + 1 ..];
 }
 
 fn pathsOverlap(a: []const u8, b: []const u8) bool {
@@ -722,6 +747,39 @@ test "doctor check reports L0007 for non-regular logical symlink target" {
         if (std.mem.eql(u8, d.code, "L0007")) break d;
     } else unreachable;
     try std.testing.expect(std.mem.indexOf(u8, l0007.message, "directory") != null);
+}
+
+test "doctor check reports L0008 for mismatched logical and physical relative paths" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const physical_path = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.root_a, "movies", "movie.mkv" },
+    );
+    defer std.testing.allocator.free(physical_path);
+    if (std.fs.path.dirname(physical_path)) |parent| try std.fs.cwd().makePath(parent);
+    var file = try std.fs.createFileAbsolute(physical_path, .{});
+    defer file.close();
+    try file.writeAll("data");
+
+    const logical_link = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "different", "movie.mkv" },
+    );
+    defer std.testing.allocator.free(logical_link);
+    if (std.fs.path.dirname(logical_link)) |parent| try std.fs.cwd().makePath(parent);
+    try std.fs.symLinkAbsolute(physical_path, logical_link, .{});
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "L0008"));
 }
 
 test "doctor check succeeds when config paths exist" {
