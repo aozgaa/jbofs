@@ -155,7 +155,7 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
         }
     }
 
-    try appendLogicalEntryDiagnostics(allocator, &diagnostics, config.logical_root);
+    try appendLogicalEntryDiagnostics(allocator, &diagnostics, config);
 
     sortDiagnostics(diagnostics.items);
     return .{ .diagnostics = try diagnostics.toOwnedSlice(allocator) };
@@ -224,8 +224,9 @@ fn appendCanonDiagnostic(
 fn appendLogicalEntryDiagnostics(
     allocator: std.mem.Allocator,
     diagnostics: *std.ArrayList(Diagnostic),
-    logical_root: []const u8,
+    config: cfg.Config,
 ) !void {
+    const logical_root = config.logical_root;
     var dir = std.fs.openDirAbsolute(logical_root, .{ .iterate = true }) catch return;
     defer dir.close();
 
@@ -239,7 +240,7 @@ fn appendLogicalEntryDiagnostics(
         switch (entry.kind) {
             .directory => {},
             .sym_link => {
-                try checkLogicalSymlink(allocator, diagnostics, logical_root, logical_path);
+                try checkLogicalSymlink(allocator, diagnostics, config, logical_path);
             },
             else => {
                 const kind_name = @tagName(entry.kind);
@@ -263,7 +264,7 @@ fn appendLogicalEntryDiagnostics(
 fn checkLogicalSymlink(
     allocator: std.mem.Allocator,
     diagnostics: *std.ArrayList(Diagnostic),
-    logical_root: []const u8,
+    config: cfg.Config,
     logical_path: []const u8,
 ) !void {
     var target_buffer: [std.fs.max_path_bytes]u8 = undefined;
@@ -302,7 +303,7 @@ fn checkLogicalSymlink(
         });
     }
 
-    const canonical_logical_root = std.fs.realpathAlloc(allocator, logical_root) catch return;
+    const canonical_logical_root = std.fs.realpathAlloc(allocator, config.logical_root) catch return;
     defer allocator.free(canonical_logical_root);
 
     if (pathStartsWith(canonical_target, canonical_logical_root)) {
@@ -313,6 +314,32 @@ fn checkLogicalSymlink(
         );
         try appendDiagnostic(allocator, diagnostics, .{
             .code = "L0004",
+            .scope = .logical,
+            .path = try allocator.dupe(u8, logical_path),
+            .message = msg,
+            .owns_path = true,
+        });
+    }
+
+    var inside_any_root = false;
+    for (config.roots) |root| {
+        const canonical_root = std.fs.realpathAlloc(allocator, root.root_path) catch continue;
+        defer allocator.free(canonical_root);
+
+        if (pathStartsWith(canonical_target, canonical_root)) {
+            inside_any_root = true;
+            break;
+        }
+    }
+
+    if (!inside_any_root) {
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "logical symlink target resolves outside configured physical roots: {s}",
+            .{canonical_target},
+        );
+        try appendDiagnostic(allocator, diagnostics, .{
+            .code = "L0005",
             .scope = .logical,
             .path = try allocator.dupe(u8, logical_path),
             .message = msg,
@@ -562,6 +589,38 @@ test "doctor check reports L0004 for logical symlink target inside logical root"
     defer report.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "L0004"));
+}
+
+test "doctor check reports L0005 for logical symlink target outside configured roots" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const outside_target = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ tmp_root, "outside", "payload.txt" },
+    );
+    defer std.testing.allocator.free(outside_target);
+    if (std.fs.path.dirname(outside_target)) |parent| try std.fs.cwd().makePath(parent);
+    var file = try std.fs.createFileAbsolute(outside_target, .{});
+    defer file.close();
+    try file.writeAll("payload");
+
+    const logical_link = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "outside-link" },
+    );
+    defer std.testing.allocator.free(logical_link);
+    try std.fs.symLinkAbsolute(outside_target, logical_link, .{});
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "L0005"));
 }
 
 test "doctor check succeeds when config paths exist" {
