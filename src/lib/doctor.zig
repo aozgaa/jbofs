@@ -239,7 +239,7 @@ fn appendLogicalEntryDiagnostics(
         switch (entry.kind) {
             .directory => {},
             .sym_link => {
-                try checkLogicalSymlink(allocator, diagnostics, logical_path);
+                try checkLogicalSymlink(allocator, diagnostics, logical_root, logical_path);
             },
             else => {
                 const kind_name = @tagName(entry.kind);
@@ -263,6 +263,7 @@ fn appendLogicalEntryDiagnostics(
 fn checkLogicalSymlink(
     allocator: std.mem.Allocator,
     diagnostics: *std.ArrayList(Diagnostic),
+    logical_root: []const u8,
     logical_path: []const u8,
 ) !void {
     var target_buffer: [std.fs.max_path_bytes]u8 = undefined;
@@ -300,12 +301,36 @@ fn checkLogicalSymlink(
             .owns_path = true,
         });
     }
+
+    const canonical_logical_root = std.fs.realpathAlloc(allocator, logical_root) catch return;
+    defer allocator.free(canonical_logical_root);
+
+    if (pathStartsWith(canonical_target, canonical_logical_root)) {
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "logical symlink target resolves inside logical_root: {s}",
+            .{canonical_target},
+        );
+        try appendDiagnostic(allocator, diagnostics, .{
+            .code = "L0004",
+            .scope = .logical,
+            .path = try allocator.dupe(u8, logical_path),
+            .message = msg,
+            .owns_path = true,
+        });
+    }
+}
+
+fn pathStartsWith(path: []const u8, prefix: []const u8) bool {
+    if (!std.mem.startsWith(u8, path, prefix)) return false;
+    if (path.len == prefix.len) return true;
+    return path[prefix.len] == '/';
 }
 
 fn pathsOverlap(a: []const u8, b: []const u8) bool {
     if (std.mem.eql(u8, a, b)) return true;
-    if (std.mem.startsWith(u8, a, b) and a[b.len] == '/') return true;
-    if (std.mem.startsWith(u8, b, a) and b[a.len] == '/') return true;
+    if (pathStartsWith(a, b)) return true;
+    if (pathStartsWith(b, a)) return true;
     return false;
 }
 
@@ -491,6 +516,38 @@ test "doctor check reports L0003 for non-canonical logical symlink target" {
     defer report.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "L0003"));
+}
+
+test "doctor check reports L0004 for logical symlink target inside logical root" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const target_path = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "nested", "payload.txt" },
+    );
+    defer std.testing.allocator.free(target_path);
+    if (std.fs.path.dirname(target_path)) |parent| try std.fs.cwd().makePath(parent);
+    var file = try std.fs.createFileAbsolute(target_path, .{});
+    defer file.close();
+    try file.writeAll("payload");
+
+    const logical_link = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "loop-link" },
+    );
+    defer std.testing.allocator.free(logical_link);
+    try std.fs.symLinkAbsolute(target_path, logical_link, .{});
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "L0004"));
 }
 
 test "doctor check succeeds when config paths exist" {
