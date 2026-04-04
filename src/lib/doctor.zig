@@ -282,6 +282,24 @@ fn checkLogicalSymlink(
             .owns_path = true,
         });
     }
+
+    const canonical_target = std.fs.realpathAlloc(allocator, target) catch return;
+    defer allocator.free(canonical_target);
+
+    if (!std.mem.eql(u8, target, canonical_target)) {
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "logical symlink target is not canonicalized: stored {s}, canonical {s}",
+            .{ target, canonical_target },
+        );
+        try appendDiagnostic(allocator, diagnostics, .{
+            .code = "L0003",
+            .scope = .logical,
+            .path = try allocator.dupe(u8, logical_path),
+            .message = msg,
+            .owns_path = true,
+        });
+    }
 }
 
 fn pathsOverlap(a: []const u8, b: []const u8) bool {
@@ -434,6 +452,45 @@ test "doctor check emits no diagnostics for well formed logical mapping in subdi
     defer report.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 0), report.diagnostics.len);
+}
+
+test "doctor check reports L0003 for non-canonical logical symlink target" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const physical_path = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.root_a, "media", "movie.mkv" },
+    );
+    defer std.testing.allocator.free(physical_path);
+    if (std.fs.path.dirname(physical_path)) |parent| try std.fs.cwd().makePath(parent);
+    var file = try std.fs.createFileAbsolute(physical_path, .{});
+    defer file.close();
+    try file.writeAll("data");
+
+    const non_canonical_target = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.root_a, "media", "..", "media", "movie.mkv" },
+    );
+    defer std.testing.allocator.free(non_canonical_target);
+
+    const logical_link = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "media", "movie.mkv" },
+    );
+    defer std.testing.allocator.free(logical_link);
+    if (std.fs.path.dirname(logical_link)) |parent| try std.fs.cwd().makePath(parent);
+    try std.fs.symLinkAbsolute(non_canonical_target, logical_link, .{});
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "L0003"));
 }
 
 test "doctor check succeeds when config paths exist" {
