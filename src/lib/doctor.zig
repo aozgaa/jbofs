@@ -362,6 +362,24 @@ fn checkLogicalSymlink(
             .owns_path = true,
         });
     }
+
+    var target_file = std.fs.openFileAbsolute(canonical_target, .{}) catch return;
+    defer target_file.close();
+    const stat = target_file.stat() catch return;
+    if (stat.kind != .file) {
+        const msg = try std.fmt.allocPrint(
+            allocator,
+            "logical symlink target is not a regular file; actual target type is {s}",
+            .{@tagName(stat.kind)},
+        );
+        try appendDiagnostic(allocator, diagnostics, .{
+            .code = "L0007",
+            .scope = .logical,
+            .path = try allocator.dupe(u8, logical_path),
+            .message = msg,
+            .owns_path = true,
+        });
+    }
 }
 
 fn pathStartsWith(path: []const u8, prefix: []const u8) bool {
@@ -670,6 +688,40 @@ test "doctor check reports L0006 for missing logical symlink target" {
         if (std.mem.eql(u8, d.code, "L0006")) break d;
     } else unreachable;
     try std.testing.expect(std.mem.indexOf(u8, l0006.message, "jbofs prune") != null);
+}
+
+test "doctor check reports L0007 for non-regular logical symlink target" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const directory_target = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.root_a, "media-dir" },
+    );
+    defer std.testing.allocator.free(directory_target);
+    try std.fs.cwd().makePath(directory_target);
+
+    const logical_link = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.logical_root, "dir-link" },
+    );
+    defer std.testing.allocator.free(logical_link);
+    try std.fs.symLinkAbsolute(directory_target, logical_link, .{});
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "L0007"));
+
+    const l0007 = for (report.diagnostics) |d| {
+        if (std.mem.eql(u8, d.code, "L0007")) break d;
+    } else unreachable;
+    try std.testing.expect(std.mem.indexOf(u8, l0007.message, "directory") != null);
 }
 
 test "doctor check succeeds when config paths exist" {
