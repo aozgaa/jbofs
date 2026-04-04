@@ -446,6 +446,20 @@ fn countDiagnosticsWithCode(report: Report, code: []const u8) usize {
     return count;
 }
 
+test "pathStartsWith" {
+    try std.testing.expect(pathStartsWith("", ""));
+    try std.testing.expect(!pathStartsWith("", "/"));
+    try std.testing.expect(pathStartsWith("/", ""));
+    try std.testing.expect(pathStartsWith("/", "/"));
+
+    try std.testing.expect(pathStartsWith("/srv/jbofs/logical", "/srv/jbofs/logical"));
+    try std.testing.expect(pathStartsWith("/srv/jbofs/logical/media/movie.mkv", "/srv/jbofs/logical"));
+    try std.testing.expect(!pathStartsWith("/srv/jbofs/logical2", "/srv/jbofs/logical"));
+    try std.testing.expect(!pathStartsWith("/srv/jbofs/logical-sibling", "/srv/jbofs/logical"));
+    try std.testing.expect(!pathStartsWith("/srv/jbofs", "/srv/jbofs/logical"));
+    try std.testing.expect(!pathStartsWith("/srv/jbofs/logical", "/srv/jbofs/logical/media"));
+}
+
 test "doctor check emits no diagnostics for well formed logical mapping in subdir" {
     var tmp_dir = std.testing.tmpDir(.{});
     defer tmp_dir.cleanup();
