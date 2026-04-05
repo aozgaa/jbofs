@@ -5,6 +5,7 @@ const cfg = @import("../config.zig");
 pub const Scope = enum {
     config,
     logical,
+    physical,
 };
 
 pub const Diagnostic = struct {
@@ -156,6 +157,7 @@ pub fn checkConfig(allocator: std.mem.Allocator, config: cfg.Config) !Report {
     }
 
     try appendLogicalEntryDiagnostics(allocator, &diagnostics, config);
+    try appendPhysicalRootDiagnostics(allocator, &diagnostics, config);
 
     sortDiagnostics(diagnostics.items);
     return .{ .diagnostics = try diagnostics.toOwnedSlice(allocator) };
@@ -258,6 +260,26 @@ fn appendLogicalEntryDiagnostics(
                 });
             },
         }
+    }
+}
+
+fn appendPhysicalRootDiagnostics(
+    allocator: std.mem.Allocator,
+    diagnostics: *std.ArrayList(Diagnostic),
+    config: cfg.Config,
+) !void {
+    for (config.roots) |root| {
+        var dir = std.fs.openDirAbsolute(root.root_path, .{ .iterate = true }) catch {
+            const msg = try allocator.dupe(u8, "configured physical root is missing or unopenable during physical scan");
+            try appendDiagnostic(allocator, diagnostics, .{
+                .code = "P0001",
+                .scope = .physical,
+                .path = root.root_path,
+                .message = msg,
+            });
+            continue;
+        };
+        dir.close();
     }
 }
 
@@ -849,6 +871,23 @@ test "doctor check reports C0003 for missing physical root" {
         if (std.mem.eql(u8, d.code, "C0003")) break true;
     } else false;
     try std.testing.expect(found_c0003);
+}
+
+test "doctor check reports P0001 for missing physical root during physical scan" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    try std.fs.deleteTreeAbsolute(owned.root_a);
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "P0001"));
 }
 
 test "doctor check reports C0001 for invalid shortname" {
