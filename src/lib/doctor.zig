@@ -286,7 +286,45 @@ fn appendPhysicalRootDiagnostics(
 
         while (try walker.next()) |entry| {
             switch (entry.kind) {
-                .directory, .file => {},
+                .directory => {},
+                .file => {
+                    const physical_path = try std.fs.path.join(allocator, &.{ root.root_path, entry.path });
+                    defer allocator.free(physical_path);
+                    const logical_path = try std.fs.path.join(allocator, &.{ config.logical_root, entry.path });
+                    defer allocator.free(logical_path);
+
+                    var link_buffer: [std.fs.max_path_bytes]u8 = undefined;
+                    const logical_target = std.fs.readLinkAbsolute(logical_path, &link_buffer) catch {
+                        const msg = try std.fmt.allocPrint(
+                            allocator,
+                            "physical file has no corresponding logical symlink; run `jbofs sync`: {s}",
+                            .{physical_path},
+                        );
+                        try appendDiagnostic(allocator, diagnostics, .{
+                            .code = "P0003",
+                            .scope = .physical,
+                            .path = try allocator.dupe(u8, physical_path),
+                            .message = msg,
+                            .owns_path = true,
+                        });
+                        continue;
+                    };
+
+                    if (!std.mem.eql(u8, logical_target, physical_path)) {
+                        const msg = try std.fmt.allocPrint(
+                            allocator,
+                            "physical file has no corresponding logical symlink; run `jbofs sync`: {s}",
+                            .{physical_path},
+                        );
+                        try appendDiagnostic(allocator, diagnostics, .{
+                            .code = "P0003",
+                            .scope = .physical,
+                            .path = try allocator.dupe(u8, physical_path),
+                            .message = msg,
+                            .owns_path = true,
+                        });
+                    }
+                },
                 else => {
                     const physical_path = try std.fs.path.join(allocator, &.{ root.root_path, entry.path });
                     defer allocator.free(physical_path);
@@ -937,6 +975,36 @@ test "doctor check reports P0002 for fifo under physical root" {
     defer report.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "P0002"));
+}
+
+test "doctor check reports P0003 for physical file without logical symlink" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const physical_path = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.root_a, "media", "movie.mkv" },
+    );
+    defer std.testing.allocator.free(physical_path);
+    if (std.fs.path.dirname(physical_path)) |parent| try std.fs.cwd().makePath(parent);
+    var file = try std.fs.createFileAbsolute(physical_path, .{});
+    defer file.close();
+    try file.writeAll("data");
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "P0003"));
+
+    const p0003 = for (report.diagnostics) |d| {
+        if (std.mem.eql(u8, d.code, "P0003")) break d;
+    } else unreachable;
+    try std.testing.expect(std.mem.indexOf(u8, p0003.message, "jbofs sync") != null);
 }
 
 test "doctor check reports C0001 for invalid shortname" {
