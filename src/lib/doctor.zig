@@ -284,7 +284,20 @@ fn appendPhysicalRootDiagnostics(
         var walker = try dir.walk(allocator);
         defer walker.deinit();
 
-        while (try walker.next()) |entry| {
+        while (walker.next() catch |err| {
+            const msg = try std.fmt.allocPrint(
+                allocator,
+                "physical traversal / stat / read failure while scanning {s}: {s}",
+                .{ root.root_path, @errorName(err) },
+            );
+            try appendDiagnostic(allocator, diagnostics, .{
+                .code = "P0004",
+                .scope = .physical,
+                .path = root.root_path,
+                .message = msg,
+            });
+            break;
+        }) |entry| {
             switch (entry.kind) {
                 .directory => {},
                 .file => {
@@ -1005,6 +1018,61 @@ test "doctor check reports P0003 for physical file without logical symlink" {
         if (std.mem.eql(u8, d.code, "P0003")) break d;
     } else unreachable;
     try std.testing.expect(std.mem.indexOf(u8, p0003.message, "jbofs sync") != null);
+}
+
+test "doctor check reports P0004 for physical traversal failure" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const blocked_dir = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.root_a, "blocked" },
+    );
+    defer std.testing.allocator.free(blocked_dir);
+    try std.fs.cwd().makePath(blocked_dir);
+
+    const blocked_file = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ blocked_dir, "payload.txt" },
+    );
+    defer std.testing.allocator.free(blocked_file);
+    var file = try std.fs.createFileAbsolute(blocked_file, .{});
+    defer file.close();
+    try file.writeAll("data");
+
+    // N.B. std.fs.Dir.chmod errors on dir currently
+    const chmod_down = try std.process.Child.run(.{
+        .allocator = std.testing.allocator,
+        .argv = &.{ "chmod", "000", blocked_dir },
+    });
+    defer {
+        std.testing.allocator.free(chmod_down.stdout);
+        std.testing.allocator.free(chmod_down.stderr);
+    }
+    defer {
+        const chmod_up = std.process.Child.run(.{
+            .allocator = std.testing.allocator,
+            .argv = &.{ "chmod", "755", blocked_dir },
+        }) catch null;
+        if (chmod_up) |result| {
+            defer {
+                std.testing.allocator.free(result.stdout);
+                std.testing.allocator.free(result.stderr);
+            }
+        }
+    }
+    try std.testing.expectEqual(.Exited, std.meta.activeTag(chmod_down.term));
+    try std.testing.expectEqual(@as(u8, 0), chmod_down.term.Exited);
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "P0004"));
 }
 
 test "doctor check reports C0001 for invalid shortname" {
