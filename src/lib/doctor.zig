@@ -279,7 +279,33 @@ fn appendPhysicalRootDiagnostics(
             });
             continue;
         };
-        dir.close();
+        defer dir.close();
+
+        var walker = try dir.walk(allocator);
+        defer walker.deinit();
+
+        while (try walker.next()) |entry| {
+            switch (entry.kind) {
+                .directory, .file => {},
+                else => {
+                    const physical_path = try std.fs.path.join(allocator, &.{ root.root_path, entry.path });
+                    defer allocator.free(physical_path);
+
+                    const msg = try std.fmt.allocPrint(
+                        allocator,
+                        "unexpected physical entry kind '{s}'; expected directory or file",
+                        .{@tagName(entry.kind)},
+                    );
+                    try appendDiagnostic(allocator, diagnostics, .{
+                        .code = "P0002",
+                        .scope = .physical,
+                        .path = try allocator.dupe(u8, physical_path),
+                        .message = msg,
+                        .owns_path = true,
+                    });
+                },
+            }
+        }
     }
 }
 
@@ -888,6 +914,29 @@ test "doctor check reports P0001 for missing physical root during physical scan"
     defer report.deinit(std.testing.allocator);
 
     try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "P0001"));
+}
+
+test "doctor check reports P0002 for fifo under physical root" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    const tmp_root = try tmpDirPath(std.testing.allocator, &tmp_dir);
+    defer std.testing.allocator.free(tmp_root);
+    var owned = try makeConfig(std.testing.allocator, tmp_root);
+    defer owned.deinit(std.testing.allocator);
+
+    const invalid_entry = try std.fs.path.join(
+        std.testing.allocator,
+        &.{ owned.root_a, "nested", "named-pipe" },
+    );
+    defer std.testing.allocator.free(invalid_entry);
+    if (std.fs.path.dirname(invalid_entry)) |parent| try std.fs.cwd().makePath(parent);
+    try createFifo(invalid_entry);
+
+    const report = try checkConfig(std.testing.allocator, owned.config);
+    defer report.deinit(std.testing.allocator);
+
+    try std.testing.expectEqual(@as(usize, 1), countDiagnosticsWithCode(report, "P0002"));
 }
 
 test "doctor check reports C0001 for invalid shortname" {
