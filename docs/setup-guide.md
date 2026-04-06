@@ -58,6 +58,12 @@ Use `-f` to overwrite an existing config:
 zig build run -- init -f
 ```
 
+When loading the config, `jbofs` checks these locations in order:
+
+- `$JBOFS_CONFIG_PATH`, if set
+- `$XDG_CONFIG_HOME/jbofs/fs_config.json`, if set
+- `~/.config/jbofs/fs_config.json` otherwise
+
 ## 3. Verify the Generated Config
 
 The config schema is:
