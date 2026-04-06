@@ -18,7 +18,7 @@ Global options:
 - `-c, --config <PATH>`: choose a config file
 - `-h, --help`: show help
 
-Before using these commands, complete [setup-guide.md](./setup-guide.md).
+Before using these commands, complete [getting-started.md](./getting-started.md).
 
 ## How Paths Work
 

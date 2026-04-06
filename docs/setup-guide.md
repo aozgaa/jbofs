@@ -1,62 +1,9 @@
 # Setup Guide
 
-This guide covers setting up the current `jbofs` CLI. In this repository, setup means creating directories and writing a
-valid config file. Disk provisioning, formatting, and mounting are outside the scope of the tool.
+This guide is the reference for `jbofs` configuration details.
+If you want the shortest path to a working install, start with [getting-started.md](./getting-started.md).
 
-## Prerequisites
-
-Before using `jbofs`, prepare the filesystem layout yourself:
-
-- create or mount one or more physical roots
-- choose a logical root directory
-
-Example layout:
-
-```text
-/srv/jbofs/raw/disk-a
-/srv/jbofs/raw/disk-b
-/srv/jbofs/logical
-```
-
-## 1. Install Zig and Build `jbofs`
-
-From the repo root:
-
-```bash
-zig build
-```
-
-To run without installing:
-
-```bash
-zig build run -- --help
-```
-
-## 2. Create the Config Interactively
-
-Run:
-
-```bash
-zig build run -- init
-```
-
-The interactive prompts ask for:
-
-- `logical dir`
-- one or more physical roots
-- each root’s shortname
-- default placement policy
-
-By default the config is written to `~/.config/jbofs/fs_config.json`. You can override that with either:
-
-- `zig build run -- -c /path/to/fs_config.json init`
-- `JBOFS_CONFIG_PATH=/path/to/fs_config.json zig build run -- init`
-
-Use `-f` to overwrite an existing config:
-
-```bash
-zig build run -- init -f
-```
+## Config Lookup
 
 When loading the config, `jbofs` checks these locations in order:
 
@@ -64,7 +11,13 @@ When loading the config, `jbofs` checks these locations in order:
 - `$XDG_CONFIG_HOME/jbofs/fs_config.json`, if set
 - `~/.config/jbofs/fs_config.json` otherwise
 
-## 3. Verify the Generated Config
+You can also select a config explicitly with:
+
+```bash
+jbofs -c /path/to/fs_config.json sync
+```
+
+## Config Schema
 
 The config schema is:
 
@@ -103,7 +56,7 @@ version.
 `jbofs query root-for-shortname <SHORTNAME>` resolves a configured shortname to the matching `root_path` when you need
 the physical location for a disk.
 
-## 4. Create the Logical Root if Needed
+## Filesystem Layout Notes
 
 `jbofs sync` and `jbofs cp` create intermediate subdirectories as needed, but the top-level physical and logical roots
 should already exist and be writable by the user running the command.
@@ -116,10 +69,9 @@ sudo chown -R $(id -nu):$(id -nu) /srv/jbofs
 mkdir -p /srv/jbofs/raw/disk-a /srv/jbofs/raw/disk-b /srv/jbofs/logical
 ```
 
-## 5. Continue With Normal Usage
+## Related Docs
 
-Once the config exists, use:
-
+- [getting-started.md](./getting-started.md) for installation and first-run setup
 - [user-guide.md](./user-guide.md) for day-to-day commands
 - [design.md](./design.md) for semantics and limitations
 - [roadmap.md](./roadmap.md) for planned follow-up work

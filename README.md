@@ -41,15 +41,13 @@ $ jbofs doctor                                                                # 
 $ jbofs prune                                                                 # rm orphaned symlink
 ```
 
-`jbofs` is configured with a JSON file.
-See [docs/setup-guide.md](./docs/setup-guide.md) for config locations, overrides, and examples.
-
 Read next:
 
 - [docs/comparison.md](./docs/comparison.md) -- start here if you are comparing to `mergerfs`, ZFS/Btrfs, RAID/LVM,
   Stow, ...
-- [docs/design.md](./docs/design.md)
-- [docs/setup-guide.md](./docs/setup-guide.md)
+- [docs/getting-started.md](./docs/getting-started.md) -- installation and first-run setup
+- [docs/design.md](./docs/design.md) -- philosophy, design goals, “architecture”
+- [docs/setup-guide.md](./docs/setup-guide.md) -- config location, overrides, examples
 - [docs/user-guide.md](./docs/user-guide.md)
 - [docs/developer-guide.md](./docs/developer-guide.md)
 - [docs/roadmap.md](./docs/roadmap.md)
